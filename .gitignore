@@ -1,0 +1,19 @@
+# Node modules
+node_modules/
+.env
+
+# Backend
+backend/bin/
+backend/test-build
+backend/.env
+backend/.env.local
+backend/.env.*.local
+backend/*.log
+backend/uploads/
+backend/main.exe
+
+# Frontend
+frontend/dist/
+frontend/dev-dist/
+frontend/.env
+frontend/.env.local
