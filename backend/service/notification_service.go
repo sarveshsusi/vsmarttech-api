@@ -46,7 +46,7 @@ func NewNotificationService(
 ========================= */
 
 type NotificationPayload struct {
-	TicketID  uuid.UUID `json:"ticket_id"`
+	TicketID  string    `json:"ticket_id"`
 	Type      string    `json:"type"`
 	Title     string    `json:"title"`
 	Message   string    `json:"message"`
@@ -57,7 +57,7 @@ type NotificationPayload struct {
 
 func (s *NotificationService) CreateTicketNotification(
 	userID uuid.UUID,
-	ticketID uuid.UUID,
+	ticketID string,
 	notificationType models.NotificationType,
 	title string,
 	message string,
@@ -127,7 +127,7 @@ func (s *NotificationService) CreateTicketNotification(
 ========================= */
 
 func (s *NotificationService) NotifyTicketCreated(
-	ticketID uuid.UUID,
+	ticketID string,
 	customerID uuid.UUID,
 ) error {
 	log.Printf("[NOTIFY_TICKET_CREATED] Starting for ticketID=%s customerID=%s", ticketID, customerID)
@@ -203,7 +203,7 @@ func (s *NotificationService) NotifyTicketCreated(
 ========================= */
 
 func (s *NotificationService) NotifyTicketStatusChanged(
-	ticketID uuid.UUID,
+	ticketID string,
 	oldStatus string,
 	newStatus string,
 	changedByUserID uuid.UUID,
@@ -332,7 +332,7 @@ func (s *NotificationService) NotifyTicketStatusChanged(
 ========================= */
 
 func (s *NotificationService) NotifyTicketAssigned(
-	ticketID uuid.UUID,
+	ticketID string,
 	engineerID uuid.UUID,
 ) error {
 	log.Printf("[NOTIFY_ASSIGNED] Starting for ticketID=%s engineerID=%s", ticketID, engineerID)
@@ -442,7 +442,7 @@ func (s *NotificationService) NotifyTicketAssigned(
 ========================= */
 
 func (s *NotificationService) NotifyTicketClosed(
-	ticketID uuid.UUID,
+	ticketID string,
 	supportComment string,
 ) error {
 	log.Printf("[NOTIFY_CLOSED] Starting for ticketID=%s", ticketID)
@@ -480,17 +480,17 @@ func (s *NotificationService) NotifyTicketClosed(
 			closureDate := time.Now().Format("Jan 2, 2006 at 3:04 PM")
 			emailHTML := utils.TicketClosureEmailTemplate(
 				user.Name,
-				ticket.ID.String(),
+				ticket.ID,
 				ticket.Title,
 				engineerName,
 				closureDate,
 				supportComment,
-				"https://dashboard.example.com/tickets/"+ticket.ID.String(),
+				"https://dashboard.example.com/tickets/"+ticket.ID,
 			)
 
 			if s.mailer != nil {
 				// Send email synchronously with error handling
-				emailSubject := "Your Support Ticket #" + ticket.ID.String() + " Has Been Resolved"
+				emailSubject := "Your Support Ticket #" + ticket.ID + " Has Been Resolved"
 				if sendErr := s.mailer.Send(user.Email, emailSubject, emailHTML); sendErr != nil {
 					log.Printf("[EMAIL_ERROR] Failed to send closure email to customer %s: %v", user.Email, sendErr)
 				} else {

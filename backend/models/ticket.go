@@ -48,7 +48,7 @@ const (
 ========================= */
 
 type Ticket struct {
-	ID uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
+	ID string `gorm:"type:varchar(20);primaryKey" json:"id"`
 
 	CustomerID uuid.UUID `gorm:"type:uuid;index" json:"customer_id"`
 	Customer   Customer  `gorm:"foreignKey:CustomerID" json:"customer"`
@@ -93,7 +93,7 @@ func (Ticket) TableName() string {
 
 type TicketAssignment struct {
 	ID                 uuid.UUID `json:"id" gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	TicketID           uuid.UUID `json:"ticket_id" gorm:"type:uuid;index"`
+	TicketID           string    `json:"ticket_id" gorm:"type:varchar(20);index"`
 	CustomerSolutionID uuid.UUID `json:"customer_solution_id" gorm:"type:uuid;index"`
 	EngineerID         uuid.UUID `json:"engineer_id" gorm:"type:uuid;index"`
 	AssignedBy         uuid.UUID `json:"assigned_by" gorm:"type:uuid"`
@@ -110,7 +110,7 @@ func (TicketAssignment) TableName() string {
 
 type TicketStatusHistory struct {
 	ID        uuid.UUID `json:"id" gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	TicketID  uuid.UUID `json:"ticket_id" gorm:"type:uuid;index"`
+	TicketID  string    `json:"ticket_id" gorm:"type:varchar(20);index"`
 	OldStatus string    `json:"old_status"`
 	NewStatus string    `json:"new_status"`
 	ChangedBy uuid.UUID `json:"changed_by" gorm:"type:uuid"`
@@ -127,7 +127,7 @@ func (TicketStatusHistory) TableName() string {
 
 type TicketComment struct {
 	ID         uuid.UUID `json:"id" gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	TicketID   uuid.UUID `json:"ticket_id" gorm:"type:uuid;index"`
+	TicketID   string    `json:"ticket_id" gorm:"type:varchar(20);index"`
 	UserID     uuid.UUID `json:"user_id" gorm:"type:uuid"`
 	Comment    string    `json:"comment" gorm:"type:text"`
 	IsInternal bool      `json:"is_internal"`
@@ -144,7 +144,7 @@ func (TicketComment) TableName() string {
 
 type TicketAttachment struct {
 	ID         uuid.UUID `json:"id" gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	TicketID   uuid.UUID `json:"ticket_id" gorm:"type:uuid;index"`
+	TicketID   string    `json:"ticket_id" gorm:"type:varchar(20);index"`
 	FileURL    string    `json:"file_url"`
 	FileName   string    `json:"file_name"`
 	FileType   string    `json:"file_type"`
@@ -162,7 +162,7 @@ func (TicketAttachment) TableName() string {
 
 type TicketFeedback struct {
 	ID         uuid.UUID `json:"id" gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	TicketID   uuid.UUID `json:"ticket_id" gorm:"type:uuid"`
+	TicketID   string    `json:"ticket_id" gorm:"type:varchar(20)"`
 	EngineerID uuid.UUID `json:"engineer_id" gorm:"type:uuid"`
 	Rating     int       `json:"rating"`
 	Comment    string    `json:"comment"`

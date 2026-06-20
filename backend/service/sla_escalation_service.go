@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"rbac/models"
+	"rbac/repository"
 	"rbac/utils"
 
 	"gorm.io/gorm"
@@ -14,15 +15,17 @@ import (
 
 // SLAEscalationService handles SLA escalation logic
 type SLAEscalationService struct {
-	db     *gorm.DB
-	mailer *utils.Mailer
+	db            *gorm.DB
+	mailer        *utils.Mailer
+	escalationRepo *repository.TicketEscalationRepository
 }
 
 // NewSLAEscalationService creates a new SLA escalation service
 func NewSLAEscalationService(db *gorm.DB, mailer *utils.Mailer) *SLAEscalationService {
 	return &SLAEscalationService{
-		db:     db,
-		mailer: mailer,
+		db:            db,
+		mailer:        mailer,
+		escalationRepo: repository.NewTicketEscalationRepository(db),
 	}
 }
 
@@ -128,6 +131,19 @@ func (s *SLAEscalationService) notifySLABreach(ctx context.Context, ticket *mode
 		return nil
 	}
 
+	// Check if escalation has already been sent for this ticket
+	alreadyEscalated, err := s.escalationRepo.AlreadyEscalated(ticket.ID)
+	if err != nil {
+		log.Printf("[SLA_CHECK_ERROR] Failed to check escalation status for ticket %s: %v", ticket.ID, err)
+		return err
+	}
+
+	// If already escalated, skip sending notification
+	if alreadyEscalated {
+		log.Printf("[SLA_NOTIFICATION_SKIP] Escalation already sent for ticket %s, skipping duplicate notification", ticket.ID)
+		return nil
+	}
+
 	// Get support engineer and their user info
 	var engineer models.SupportEngineer
 	var engineerUser models.User
@@ -151,11 +167,8 @@ func (s *SLAEscalationService) notifySLABreach(ctx context.Context, ticket *mode
 	// Get dashboard URL from environment or use default
 	dashboardURL := "http://localhost:5173/support-reports" // Default, should be from config
 
-	// Shorten ticket ID for display
-	ticketIDStr := ticket.ID.String()
-	if len(ticketIDStr) > 12 {
-		ticketIDStr = ticketIDStr[:8] + "..." + ticketIDStr[len(ticketIDStr)-4:]
-	}
+	// Use ticket ID directly (already in VS/MM/YY/number format)
+	ticketIDStr := ticket.ID
 
 	// Get customer name
 	customerName := "N/A"
@@ -205,6 +218,14 @@ func (s *SLAEscalationService) notifySLABreach(ctx context.Context, ticket *mode
 			log.Printf("[SLA_NOTIFICATION_SENT] Email sent to admin %s for ticket %s", admin.Email, ticket.ID)
 		}
 	}
+
+	// Create escalation record to prevent duplicate notifications
+	if err := s.escalationRepo.Create(ticket.ID); err != nil {
+		log.Printf("[SLA_ESCALATION_ERROR] Failed to create escalation record for ticket %s: %v", ticket.ID, err)
+		return err
+	}
+
+	log.Printf("[SLA_ESCALATION_CREATED] Escalation record created for ticket %s", ticket.ID)
 
 	return nil
 }

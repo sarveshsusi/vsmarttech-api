@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"fmt"
 	"rbac/models"
 	"time"
 
@@ -25,10 +26,42 @@ func (r *TicketRepository) Create(ticket *models.Ticket) error {
 }
 
 /* ======================
+   GENERATE TICKET ID
+/* ======================
+   GENERATE TICKET ID
+====================== */
+
+// GenerateNextTicketID generates ticket ID in format VS/MM/YY/number
+// Example: VS/04/26/10 for 10th ticket in April 2026
+func (r *TicketRepository) GenerateNextTicketID() (string, error) {
+	now := time.Now()
+	month := fmt.Sprintf("%02d", now.Month())
+	year := fmt.Sprintf("%02d", now.Year()%100)
+	
+	// Get count of tickets for current month/year
+	prefix := fmt.Sprintf("VS/%s/%s/", month, year)
+	
+	var count int64
+	err := r.db.Model(&models.Ticket{}).
+		Where("id LIKE ?", prefix+"%").
+		Count(&count).Error
+	
+	if err != nil {
+		return "", err
+	}
+	
+	// Next ticket number for this month
+	nextNumber := count + 1
+	
+	ticketID := fmt.Sprintf("VS/%s/%s/%d", month, year, nextNumber)
+	return ticketID, nil
+}
+
+/* ======================
    GETTERS
 ====================== */
 
-func (r *TicketRepository) GetByID(id uuid.UUID) (*models.Ticket, error) {
+func (r *TicketRepository) GetByID(id string) (*models.Ticket, error) {
 	var ticket models.Ticket
 	err := r.db.
 		Preload("Attachments").
@@ -86,7 +119,7 @@ func (r *TicketRepository) GetByEngineerID(engineerID uuid.UUID) ([]models.Ticke
    ASSIGNMENT HELPERS
 ====================== */
 
-func (r *TicketRepository) IsAssigned(ticketID uuid.UUID) (bool, error) {
+func (r *TicketRepository) IsAssigned(ticketID string) (bool, error) {
 	var count int64
 	err := r.db.Model(&models.TicketAssignment{}).
 		Where("ticket_id = ?", ticketID).
@@ -107,7 +140,7 @@ func (r *TicketRepository) SupportEngineerExists(id uuid.UUID) (bool, error) {
 ====================== */
 
 func (r *TicketRepository) UpdateFields(
-	ticketID uuid.UUID,
+	ticketID string,
 	fields map[string]interface{},
 ) error {
 	return r.db.Model(&models.Ticket{}).
@@ -157,7 +190,7 @@ func (r *TicketRepository) CreateTx(
 
 func (r *TicketRepository) AssignEngineerTx(
 	tx *gorm.DB,
-	ticketID uuid.UUID,
+	ticketID string,
 	engineerID uuid.UUID,
 	adminID uuid.UUID,
 ) error {

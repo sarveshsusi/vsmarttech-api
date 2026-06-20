@@ -18,6 +18,7 @@ type TicketService struct {
 	customerRepo         *repository.CustomerRepository
 	customerSolutionRepo *repository.CustomerSolutionRepository
 	notificationService  *NotificationService
+	escalationRepo       *repository.TicketEscalationRepository
 }
 
 func NewTicketService(
@@ -33,6 +34,7 @@ func NewTicketService(
 		customerRepo:         customerRepo,
 		customerSolutionRepo: customerSolutionRepo,
 		notificationService:  notificationService,
+		escalationRepo:       repository.NewTicketEscalationRepository(db),
 	}
 }
 
@@ -112,8 +114,15 @@ func (s *TicketService) CustomerCreateTicket(
 
 	now := time.Now()
 
+	// Generate custom ticket ID
+	ticketID, err := s.ticketRepo.GenerateNextTicketID()
+	if err != nil {
+		log.Printf("[CUSTOMER_CREATE_TICKET_ERROR] Failed to generate ticket ID: %v", err)
+		return nil, errors.New("failed to generate ticket ID")
+	}
+
 	ticket := &models.Ticket{
-		ID:          uuid.New(),
+		ID:          ticketID,
 		CustomerID:  customer.ID,
 		Title:       title,
 		Description: description,
@@ -144,7 +153,7 @@ func (s *TicketService) CustomerCreateTicket(
 // ADMIN: ASSIGN TICKET
 // =========================
 func (s *TicketService) AssignTicket(
-	ticketID uuid.UUID,
+	ticketID string,
 	engineerID uuid.UUID,
 	adminID uuid.UUID,
 	priority models.TicketPriority,
@@ -216,10 +225,19 @@ func (s *TicketService) AssignTicket(
 // SUPPORT: START WORK
 // =========================
 func (s *TicketService) StartTicket(
-	ticketID uuid.UUID,
-	engineerID uuid.UUID,
+	ticketID string,
+	userID uuid.UUID,
 ) error {
-	log.Printf("[START_TICKET] Starting for ticketID=%s engineerID=%s", ticketID, engineerID)
+	log.Printf("[START_TICKET] Starting for ticketID=%s userID=%s", ticketID, userID)
+
+	// ✅ GET ENGINEER ID FROM USER ID
+	var engineer models.SupportEngineer
+	if err := s.db.Where("user_id = ?", userID).First(&engineer).Error; err != nil {
+		log.Printf("[START_TICKET_ERROR] Support engineer not found for user_id=%s: %v", userID, err)
+		return errors.New("support engineer profile not found")
+	}
+
+	log.Printf("[START_TICKET] Found engineer: id=%s user_id=%s", engineer.ID, engineer.UserID)
 
 	ticket, err := s.ticketRepo.GetByID(ticketID)
 	if err != nil {
@@ -227,7 +245,13 @@ func (s *TicketService) StartTicket(
 		return err
 	}
 
-	log.Printf("[START_TICKET] Current status: %s", ticket.Status)
+	log.Printf("[START_TICKET] Current status: %s, assigned to engineer: %v", ticket.Status, ticket.EngineerID)
+
+	// ✅ VERIFY ENGINEER IS ASSIGNED TO THIS TICKET
+	if ticket.EngineerID == nil || *ticket.EngineerID != engineer.ID {
+		log.Printf("[START_TICKET_ERROR] Engineer %s is not assigned to this ticket (ticket assigned to %v)", engineer.ID, ticket.EngineerID)
+		return errors.New("you are not assigned to this ticket")
+	}
 
 	if ticket.Status != models.StatusAssigned {
 		log.Printf("[START_TICKET_ERROR] Ticket status is %s, not Assigned", ticket.Status)
@@ -250,7 +274,7 @@ func (s *TicketService) StartTicket(
 		TicketID:  ticketID,
 		OldStatus: string(models.StatusAssigned),
 		NewStatus: string(models.StatusInProgress),
-		ChangedBy: engineerID,
+		ChangedBy: engineer.ID,
 		ChangedAt: now,
 	}); err != nil {
 		log.Printf("[START_TICKET_ERROR] Failed to create status history: %v", err)
@@ -264,7 +288,7 @@ func (s *TicketService) StartTicket(
 			ticketID,
 			string(models.StatusAssigned),
 			string(models.StatusInProgress),
-			engineerID,
+			engineer.ID,
 		)
 	}
 
@@ -276,12 +300,12 @@ func (s *TicketService) StartTicket(
 // SUPPORT: CLOSE TICKET
 // =========================
 func (s *TicketService) CloseTicket(
-	ticketID uuid.UUID,
-	engineerID uuid.UUID,
+	ticketID string,
+	userID uuid.UUID,
 	proofImageURL string,
 	supportComment string,
 ) error {
-	log.Printf("[CLOSE_TICKET] Starting for ticketID=%s", ticketID)
+	log.Printf("[CLOSE_TICKET] Starting for ticketID=%s userID=%s", ticketID, userID)
 
 	if proofImageURL == "" {
 		log.Printf("[CLOSE_TICKET_ERROR] No closure proof image provided")
@@ -293,13 +317,28 @@ func (s *TicketService) CloseTicket(
 		return errors.New("support comment is required")
 	}
 
+	// ✅ GET ENGINEER ID FROM USER ID
+	var engineer models.SupportEngineer
+	if err := s.db.Where("user_id = ?", userID).First(&engineer).Error; err != nil {
+		log.Printf("[CLOSE_TICKET_ERROR] Support engineer not found for user_id=%s: %v", userID, err)
+		return errors.New("support engineer profile not found")
+	}
+
+	log.Printf("[CLOSE_TICKET] Found engineer: id=%s user_id=%s", engineer.ID, engineer.UserID)
+
 	ticket, err := s.ticketRepo.GetByID(ticketID)
 	if err != nil {
 		log.Printf("[CLOSE_TICKET_ERROR] Failed to get ticket: %v", err)
 		return err
 	}
 
-	log.Printf("[CLOSE_TICKET] Current status: %s", ticket.Status)
+	log.Printf("[CLOSE_TICKET] Current status: %s, assigned to engineer: %v", ticket.Status, ticket.EngineerID)
+
+	// ✅ VERIFY ENGINEER IS ASSIGNED TO THIS TICKET
+	if ticket.EngineerID == nil || *ticket.EngineerID != engineer.ID {
+		log.Printf("[CLOSE_TICKET_ERROR] Engineer %s is not assigned to this ticket (ticket assigned to %v)", engineer.ID, ticket.EngineerID)
+		return errors.New("you are not assigned to this ticket")
+	}
 
 	if ticket.Status != models.StatusInProgress {
 		log.Printf("[CLOSE_TICKET_ERROR] Ticket status is %s, not In Progress", ticket.Status)
@@ -330,7 +369,7 @@ func (s *TicketService) CloseTicket(
 		TicketID:  ticketID,
 		OldStatus: string(models.StatusInProgress),
 		NewStatus: string(models.StatusClosed),
-		ChangedBy: engineerID,
+		ChangedBy: engineer.ID,
 		ChangedAt: now,
 	}); err != nil {
 		log.Printf("[CLOSE_TICKET_ERROR] Failed to create status history: %v", err)
@@ -343,6 +382,14 @@ func (s *TicketService) CloseTicket(
 		go s.notificationService.NotifyTicketClosed(ticketID, supportComment)
 	}
 
+	// Resolve any pending escalations for this ticket
+	if err := s.escalationRepo.ResolveByTicket(ticketID); err != nil {
+		log.Printf("[CLOSE_TICKET_WARN] Failed to resolve escalations for ticket %s: %v", ticketID, err)
+		// Don't return error, ticket is already closed
+	} else {
+		log.Printf("[CLOSE_TICKET] Escalations resolved for ticket %s", ticketID)
+	}
+
 	log.Printf("[CLOSE_TICKET_SUCCESS] Ticket closed successfully")
 	return nil
 }
@@ -351,7 +398,7 @@ func (s *TicketService) CloseTicket(
 // ADMIN: CLOSE TICKET (on behalf of support engineer)
 // =========================
 func (s *TicketService) AdminCloseTicket(
-	ticketID uuid.UUID,
+	ticketID string,
 	adminID uuid.UUID,
 	adminComment string,
 ) error {
@@ -410,6 +457,14 @@ func (s *TicketService) AdminCloseTicket(
 		go s.notificationService.NotifyTicketClosed(ticketID, adminComment)
 	}
 
+	// Resolve any pending escalations for this ticket
+	if err := s.escalationRepo.ResolveByTicket(ticketID); err != nil {
+		log.Printf("[ADMIN_CLOSE_TICKET_WARN] Failed to resolve escalations for ticket %s: %v", ticketID, err)
+		// Don't return error, ticket is already closed
+	} else {
+		log.Printf("[ADMIN_CLOSE_TICKET] Escalations resolved for ticket %s", ticketID)
+	}
+
 	log.Printf("[ADMIN_CLOSE_TICKET_SUCCESS] Ticket closed successfully by admin")
 	return nil
 }
@@ -452,8 +507,14 @@ func (s *TicketService) AdminCreateTicketAndAssign(
 
 		targetAt := time.Now().Add(time.Duration(slaHours) * time.Hour)
 
+		// Generate custom ticket ID
+		ticketID, err := s.ticketRepo.GenerateNextTicketID()
+		if err != nil {
+			return errors.New("failed to generate ticket ID")
+		}
+
 		ticket = &models.Ticket{
-			ID:                 uuid.New(),
+			ID:                 ticketID,
 			CustomerID:         customerID,
 			CustomerSolutionID: &cs.ID,
 			EngineerID:         &engineerID,
@@ -490,7 +551,7 @@ func (s *TicketService) AdminCreateTicketAndAssign(
 }
 
 func (s *TicketService) AdminAssignTicket(
-	ticketID uuid.UUID,
+	ticketID string,
 	customerSolutionID uuid.UUID,
 	engineerID uuid.UUID,
 	adminID uuid.UUID,
@@ -585,7 +646,7 @@ func (s *TicketService) AdminAssignTicket(
 
 =========================
 */
-func (s *TicketService) GetTicketById(ticketID uuid.UUID, userID uuid.UUID) (*models.Ticket, error) {
+func (s *TicketService) GetTicketById(ticketID string, userID uuid.UUID) (*models.Ticket, error) {
 	ticket, err := s.ticketRepo.GetByID(ticketID)
 	if err != nil {
 		return nil, err
@@ -607,7 +668,7 @@ func (s *TicketService) GetTicketById(ticketID uuid.UUID, userID uuid.UUID) (*mo
 =========================
 */
 func (s *TicketService) ReassignTicket(
-	ticketID uuid.UUID,
+	ticketID string,
 	newEngineerID uuid.UUID,
 	adminID uuid.UUID,
 ) (*models.Ticket, error) {

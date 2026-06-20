@@ -16,7 +16,7 @@ func NewTicketAttachmentRepository(db *gorm.DB) *TicketAttachmentRepository {
 }
 
 func (r *TicketAttachmentRepository) Create(
-	ticketID uuid.UUID,
+	ticketID string,
 	fileURL string,
 	fileName string,
 	fileType string,

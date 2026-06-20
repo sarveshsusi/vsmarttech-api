@@ -1,0 +1,64 @@
+version: "3.9"
+
+services:
+
+  # ================================
+  # Go Backend
+  # ================================
+  backend:
+    build: .
+    container_name: go-backend
+    restart: always
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - internal
+    # No direct port exposure — nginx proxies all traffic
+
+  # ================================
+  # PostgreSQL Database
+  # ================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - internal
+    # IMPORTANT: Do NOT expose port 5432 publicly
+
+  # ================================
+  # Nginx Reverse Proxy
+  # ================================
+  nginx:
+    image: nginx:stable-alpine
+    container_name: nginx
+    restart: always
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/conf:/etc/nginx/conf.d:ro
+    depends_on:
+      - backend
+    networks:
+      - internal
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  postgres_data:

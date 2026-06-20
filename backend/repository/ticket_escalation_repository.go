@@ -1,7 +1,6 @@
 package repository
 
 import (
-	"github.com/google/uuid"
 	"rbac/models"
 	"gorm.io/gorm"
 )
@@ -15,7 +14,7 @@ func NewTicketEscalationRepository(db *gorm.DB) *TicketEscalationRepository {
 }
 
 func (r *TicketEscalationRepository) AlreadyEscalated(
-	ticketID uuid.UUID,
+	ticketID string,
 ) (bool, error) {
 
 	var count int64
@@ -28,7 +27,7 @@ func (r *TicketEscalationRepository) AlreadyEscalated(
 }
 
 func (r *TicketEscalationRepository) Create(
-	ticketID uuid.UUID,
+	ticketID string,
 ) error {
 
 	return r.db.Create(&models.TicketEscalation{
@@ -38,7 +37,7 @@ func (r *TicketEscalationRepository) Create(
 }
 
 func (r *TicketEscalationRepository) ResolveByTicket(
-	ticketID uuid.UUID,
+	ticketID string,
 ) error {
 
 	return r.db.

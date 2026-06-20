@@ -16,7 +16,7 @@ func NewFeedbackService(r *repository.FeedbackRepository) *FeedbackService {
 }
 
 func (s *FeedbackService) Submit(
-	ticketID uuid.UUID,
+	ticketID string,
 	engineerID uuid.UUID,
 	rating int,
 	comment string,

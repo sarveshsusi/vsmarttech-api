@@ -41,8 +41,8 @@ type Notification struct {
 	UserID uuid.UUID `gorm:"type:uuid;index" json:"user_id"`
 	User   *User     `gorm:"foreignKey:UserID" json:"user,omitempty"`
 
-	TicketID *uuid.UUID `gorm:"type:uuid;index" json:"ticket_id,omitempty"`
-	Ticket   *Ticket    `gorm:"foreignKey:TicketID" json:"ticket,omitempty"`
+	TicketID *string `gorm:"type:varchar(20);index" json:"ticket_id,omitempty"`
+	Ticket   *Ticket `gorm:"foreignKey:TicketID" json:"ticket,omitempty"`
 
 	// For AMC/Warranty notifications
 	CustomerSolutionID *uuid.UUID        `gorm:"type:uuid;index" json:"customer_solution_id,omitempty"`
@@ -78,7 +78,7 @@ func (Notification) TableName() string {
 type WebhookEvent struct {
 	ID        uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
 	EventType string    `gorm:"type:varchar(100);index" json:"event_type"`
-	TicketID  uuid.UUID `gorm:"type:uuid;index" json:"ticket_id"`
+	TicketID  string    `gorm:"type:varchar(20);index" json:"ticket_id"`
 
 	// Event payload
 	Payload string `gorm:"type:jsonb" json:"payload"`

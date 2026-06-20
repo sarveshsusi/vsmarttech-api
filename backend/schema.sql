@@ -141,7 +141,7 @@ ON customer_solutions(customer_id);
 -- =========================================================
 
 CREATE TABLE IF NOT EXISTS tickets (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id VARCHAR(20) PRIMARY KEY,
 
     customer_id UUID NOT NULL REFERENCES customers(id),
     customer_solution_id UUID REFERENCES customer_solutions(id),

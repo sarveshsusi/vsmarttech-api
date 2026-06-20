@@ -27,7 +27,7 @@ type AMCSchedule struct {
 	AMCID     uuid.UUID `gorm:"type:uuid;index"`
 	VisitDate time.Time
 	Completed bool
-	TicketID  *uuid.UUID `gorm:"type:uuid"`
+	TicketID  *string `gorm:"type:varchar(20)"`
 
 	AMC AMCContract `gorm:"foreignKey:AMCID"`
 }

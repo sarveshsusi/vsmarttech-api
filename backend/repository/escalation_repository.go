@@ -5,7 +5,6 @@ import (
 
 	"rbac/models"
 
-	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -54,7 +53,7 @@ func (r *EscalationRepository) FindOverdueTickets(
 =====================
 */
 func (r *EscalationRepository) MarkEscalated(
-	ticketID uuid.UUID,
+	ticketID string,
 ) error {
 
 	return r.db.Create(&models.TicketEscalation{

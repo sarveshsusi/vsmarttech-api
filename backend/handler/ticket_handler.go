@@ -121,6 +121,7 @@ func (h *TicketHandler) AdminCreateTicket(c *gin.Context) {
 =========================
 */
 type AssignTicketRequest struct {
+	TicketID           string                 `json:"ticket_id" binding:"required"`
 	CustomerSolutionID uuid.UUID              `json:"customer_solution_id" binding:"required"`
 	EngineerID         uuid.UUID              `json:"engineer_id" binding:"required"`
 	Priority           models.TicketPriority  `json:"priority" binding:"required"`
@@ -129,7 +130,6 @@ type AssignTicketRequest struct {
 }
 
 func (h *TicketHandler) AssignTicket(c *gin.Context) {
-	ticketID := uuid.MustParse(c.Param("id"))
 	adminID := c.MustGet("user_id").(uuid.UUID)
 
 	var req AssignTicketRequest
@@ -139,7 +139,7 @@ func (h *TicketHandler) AssignTicket(c *gin.Context) {
 	}
 
 	if err := h.service.AdminAssignTicket(
-		ticketID,
+		req.TicketID,
 		req.CustomerSolutionID,
 		req.EngineerID,
 		adminID,
@@ -158,12 +158,21 @@ func (h *TicketHandler) AssignTicket(c *gin.Context) {
    SUPPORT: START TICKET
 ========================= */
 
+type StartTicketRequest struct {
+	TicketID string `json:"ticket_id" binding:"required"`
+}
+
 func (h *TicketHandler) StartTicket(c *gin.Context) {
-	ticketID := uuid.MustParse(c.Param("id"))
 	engineerID := c.MustGet("user_id").(uuid.UUID)
 
-	if err := h.service.StartTicket(ticketID, engineerID); err != nil {
+	var req StartTicketRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+
+	if err := h.service.StartTicket(req.TicketID, engineerID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -180,12 +189,12 @@ func (h *TicketHandler) StartTicket(c *gin.Context) {
 ========================= */
 
 type CloseTicketRequest struct {
+	TicketID       string `json:"ticket_id" binding:"required"`
 	ProofURL       string `json:"proof_url" binding:"required"`
 	SupportComment string `json:"support_comment" binding:"required"`
 }
 
 func (h *TicketHandler) CloseTicket(c *gin.Context) {
-	ticketID := uuid.MustParse(c.Param("id"))
 	engineerID := c.MustGet("user_id").(uuid.UUID)
 
 	// Accept JSON request with proof URL (from AWS S3 upload)
@@ -213,13 +222,13 @@ func (h *TicketHandler) CloseTicket(c *gin.Context) {
 
 	log.Printf(
 		"[TICKET_CLOSE] ticket_id=%s engineer_id=%s proof_url=%s",
-		ticketID,
+		req.TicketID,
 		engineerID,
 		req.ProofURL,
 	)
 
-	if err := h.service.CloseTicket(ticketID, engineerID, req.ProofURL, req.SupportComment); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+	if err := h.service.CloseTicket(req.TicketID, engineerID, req.ProofURL, req.SupportComment); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -232,11 +241,11 @@ func (h *TicketHandler) CloseTicket(c *gin.Context) {
 ========================= */
 
 type AdminCloseTicketRequest struct {
+	TicketID     string `json:"ticket_id" binding:"required"`
 	AdminComment string `json:"admin_comment" binding:"required"`
 }
 
 func (h *TicketHandler) AdminCloseTicket(c *gin.Context) {
-	ticketID := uuid.MustParse(c.Param("id"))
 	adminID := c.MustGet("user_id").(uuid.UUID)
 
 	var req AdminCloseTicketRequest
@@ -252,11 +261,11 @@ func (h *TicketHandler) AdminCloseTicket(c *gin.Context) {
 
 	log.Printf(
 		"[ADMIN_CLOSE_TICKET] ticket_id=%s admin_id=%s",
-		ticketID,
+		req.TicketID,
 		adminID,
 	)
 
-	if err := h.service.AdminCloseTicket(ticketID, adminID, req.AdminComment); err != nil {
+	if err := h.service.AdminCloseTicket(req.TicketID, adminID, req.AdminComment); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 		return
 	}
@@ -322,18 +331,16 @@ func (h *TicketHandler) AdminCreateTicketAndAssign(c *gin.Context) {
 =========================
 */
 func (h *TicketHandler) GetTicketById(c *gin.Context) {
-	ticketID := c.Param("id")
-	userID := c.MustGet("user_id").(uuid.UUID)
-
-	// Parse ticket ID
-	tid, err := uuid.Parse(ticketID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ticket ID"})
+	ticketID := c.Query("id") // Read from query parameter
+	if ticketID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ticket_id is required"})
 		return
 	}
+	
+	userID := c.MustGet("user_id").(uuid.UUID)
 
 	// Get ticket from service
-	ticket, err := h.service.GetTicketById(tid, userID)
+	ticket, err := h.service.GetTicketById(ticketID, userID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Ticket not found"})
 		return
@@ -347,11 +354,11 @@ func (h *TicketHandler) GetTicketById(c *gin.Context) {
 ========================= */
 
 type ReassignTicketRequest struct {
+	TicketID   string    `json:"ticket_id" binding:"required"`
 	EngineerID uuid.UUID `json:"engineer_id" binding:"required"`
 }
 
 func (h *TicketHandler) ReassignTicket(c *gin.Context) {
-	ticketID := uuid.MustParse(c.Param("id"))
 	adminID := c.MustGet("user_id").(uuid.UUID)
 
 	var req ReassignTicketRequest
@@ -360,7 +367,7 @@ func (h *TicketHandler) ReassignTicket(c *gin.Context) {
 		return
 	}
 
-	ticket, err := h.service.ReassignTicket(ticketID, req.EngineerID, adminID)
+	ticket, err := h.service.ReassignTicket(req.TicketID, req.EngineerID, adminID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 		return

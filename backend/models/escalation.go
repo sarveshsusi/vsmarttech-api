@@ -20,7 +20,7 @@ func (EscalationRule) TableName() string {
 
 type TicketEscalation struct {
 	ID          uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	TicketID    uuid.UUID `gorm:"type:uuid"`
+	TicketID    string    `gorm:"type:varchar(20)"`
 	RuleID      uuid.UUID `gorm:"type:uuid"`
 	EscalatedAt time.Time
 	Resolved    bool

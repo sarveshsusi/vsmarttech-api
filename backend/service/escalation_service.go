@@ -47,7 +47,7 @@ func (s *EscalationService) Run() {
 
 		dashboardURL := s.cfg.FrontendURL + "/dashboard/support"
 		body := utils.TicketEscalationEmailTemplate(
-			t.ID.String(),
+			t.ID,
 			t.Title,
 			string(t.Status),
 			dashboardURL,

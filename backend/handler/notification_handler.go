@@ -206,7 +206,7 @@ func (h *NotificationHandler) TestCreateNotification(c *gin.Context) {
 
 	if err := h.notifService.CreateTicketNotification(
 		userID,
-		uuid.New(),
+		"TEST/01/01/1",
 		models.NotificationTypeTicketCreated,
 		title,
 		testMsg,

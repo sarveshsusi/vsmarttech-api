@@ -18,9 +18,8 @@ func NewFeedbackHandler(s *service.FeedbackService) *FeedbackHandler {
 }
 
 func (h *FeedbackHandler) Submit(c *gin.Context) {
-	ticketID := uuid.MustParse(c.Param("id"))
-
 	var req struct {
+		TicketID   string    `json:"ticket_id" binding:"required"`
 		EngineerID uuid.UUID `json:"engineer_id"`
 		Rating     int       `json:"rating"`
 		Comment    string    `json:"comment"`
@@ -32,7 +31,7 @@ func (h *FeedbackHandler) Submit(c *gin.Context) {
 	}
 
 	if err := h.service.Submit(
-		ticketID,
+		req.TicketID,
 		req.EngineerID,
 		req.Rating,
 		req.Comment,

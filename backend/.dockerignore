@@ -1,0 +1,16 @@
+# Ignore everything not needed inside the Docker build context
+# This keeps the image small and avoids leaking secrets
+
+.env
+.env.*
+.git
+.gitignore
+*.md
+main/main     # compiled binary (dev)
+server        # compiled binary (dev)
+
+# Test files
+*_test.go
+
+# Local uploads (S3 is used in production)
+uploads/

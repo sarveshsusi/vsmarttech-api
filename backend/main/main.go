@@ -60,17 +60,10 @@ func main() {
 		log.Fatalf("failed to set trusted proxies: %v", err)
 	}
 
-	// Set CORS allowed origins based on environment
-	var corsOrigins []string
-	if cfg.Server.Env == "production" {
-		corsOrigins = []string{
-			"https://yourdomain.com", // Change to your production domain
-		}
-	} else {
-		corsOrigins = []string{
-			"http://localhost:5173",
-			"http://localhost:3000",
-		}
+	// Set CORS allowed origins - allow both dev and production
+	corsOrigins := []string{
+		"http://localhost:5173",  // Development
+		cfg.FrontendURL,           // Production (from env)
 	}
 
 	r.Use(middleware.CORSMiddleware(corsOrigins))

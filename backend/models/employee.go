@@ -32,7 +32,7 @@ func (SupportEngineer) TableName() string {
 
 type ServiceVisit struct {
 	ID         uuid.UUID  `json:"id" gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	TicketID   uuid.UUID  `json:"ticket_id" gorm:"type:uuid"`
+	TicketID   string     `json:"ticket_id" gorm:"type:varchar(20)"`
 	EngineerID uuid.UUID  `json:"engineer_id" gorm:"type:uuid"`
 	StartTime  time.Time  `json:"start_time"`
 	EndTime    *time.Time `json:"end_time,omitempty"`
@@ -65,7 +65,7 @@ func (GPSLog) TableName() string {
 
 type DigitalSignature struct {
 	ID       uuid.UUID `json:"id" gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	TicketID uuid.UUID `json:"ticket_id" gorm:"type:uuid"`
+	TicketID string    `json:"ticket_id" gorm:"type:varchar(20)"`
 	SignedBy string    `json:"signed_by"`
 	FileURL  string    `json:"file_url"`
 	SignedAt time.Time `json:"signed_at"`

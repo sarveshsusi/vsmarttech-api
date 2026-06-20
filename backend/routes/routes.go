@@ -57,8 +57,8 @@ func SetupRoutes(
 	   AUTH (PUBLIC)
 	========================= */
 	auth := api.Group("/auth")
-	// Rate limiting for auth endpoints (5 requests per minute for login security)
-	auth.POST("/login", middleware.RateLimit(5), middleware.BruteForceGuard(), authHandler.Login)
+	// Rate limiting for auth endpoints (10 requests per minute)
+	auth.POST("/login", middleware.RateLimit(10), middleware.BruteForceGuard(), authHandler.Login)
 	{
 		auth.POST("/refresh", authHandler.RefreshToken)
 		auth.POST("/forgot-password", authHandler.ForgotPassword)
@@ -188,18 +188,18 @@ func SetupRoutes(
 			admin.POST("/tickets", ticketHandler.AdminCreateTicketAndAssign)
 
 			admin.POST(
-				"/tickets/:id/assign",
+				"/tickets/assign",
 				ticketHandler.AssignTicket,
 			)
 
 			admin.POST(
-				"/tickets/:id/reassign",
+				"/tickets/reassign",
 				ticketHandler.ReassignTicket,
 			)
 
 			// Admin closes ticket on behalf of support engineer
 			admin.POST(
-				"/tickets/:id/close",
+				"/tickets/close",
 				ticketHandler.AdminCloseTicket,
 			)
 		}
@@ -213,8 +213,8 @@ func SetupRoutes(
 			support.GET("/dashboard", supportDashboard.GetStats)
 			support.GET("/tickets", supportEngineerHandler.GetMyTickets)
 
-			support.POST("/tickets/:id/start", ticketHandler.StartTicket)
-			support.POST("/tickets/:id/close", ticketHandler.CloseTicket)
+			support.POST("/tickets/start", ticketHandler.StartTicket)
+			support.POST("/tickets/close", ticketHandler.CloseTicket)
 
 			/* =========================
 			   AMC SCHEDULER
@@ -235,13 +235,13 @@ func SetupRoutes(
 			customer.GET("/dashboard", customerDashboard.GetStats)
 			customer.GET("/dashboard/checkpoints", customerDashboard.GetTicketCheckpoints)
 			customer.GET("/tickets", customerDashboard.MyTickets)
-			customer.GET("/tickets/:id", ticketHandler.GetTicketById)
+			customer.GET("/ticket", ticketHandler.GetTicketById) // Use query param: ?id=VS/04/26/1
 
 			// Customer creates ticket using PO
 			customer.POST("/tickets", ticketHandler.CreateTicket)
 
 			customer.POST(
-				"/tickets/:id/feedback",
+				"/tickets/feedback",
 				feedbackHandler.Submit,
 			)
 
