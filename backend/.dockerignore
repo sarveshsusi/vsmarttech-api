@@ -3,14 +3,29 @@
 
 .env
 .env.*
+!.env.example
+!.env.production.example
 .git
 .gitignore
-*.md
-main/main     # compiled binary (dev)
-server        # compiled binary (dev)
+docker-compose*.yml
+Dockerfile*
+.dockerignore
 
-# Test files
-*_test.go
+# Local binaries / artifacts
+main/main
+app
+server
+bin/
+*.tar
+myapp-api.tar
+*.log
 
 # Local uploads (S3 is used in production)
 uploads/
+
+# Docs / scripts not needed in the image
+*.md
+DEPLOY_LIGHTSAIL.md
+scripts/
+nginx/
+openapi.yaml

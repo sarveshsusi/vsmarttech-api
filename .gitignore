@@ -2,18 +2,33 @@
 node_modules/
 .env
 
-# Backend
-backend/bin/
-backend/test-build
+# Backend secrets & local env
 backend/.env
 backend/.env.local
 backend/.env.*.local
+backend/.env.production
+backend/docker-compose.override.yml
+
+# Compiled binaries / artifacts (never commit)
+backend/bin/
+backend/app
+backend/server
+backend/main/main
+backend/main.exe
+backend/*.tar
+backend/myapp-api.tar
+backend/test-build
 backend/*.log
 backend/uploads/
-backend/main.exe
 
 # Frontend
 frontend/dist/
 frontend/dev-dist/
 frontend/.env
 frontend/.env.local
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+*.swp

@@ -154,6 +154,128 @@ func (s *AMCAssignmentService) GetVisitProofs(visitID uuid.UUID) ([]models.AMCVi
 }
 
 /* =========================
+   UPDATE AMC ASSIGNMENT
+========================= */
+
+type UpdateAMCAssignmentRequest struct {
+	SupportEngineerID *uuid.UUID
+	AMCStartDate      *time.Time
+	AMCEndDate        *time.Time
+	Status            *string
+	Notes             *string
+}
+
+func (s *AMCAssignmentService) UpdateAMCAssignment(id uuid.UUID, req *UpdateAMCAssignmentRequest) error {
+	assignment, err := s.repo.GetByID(id)
+	if err != nil {
+		return err
+	}
+
+	if req.Status != nil {
+		switch *req.Status {
+		case "active", "completed", "expired":
+		default:
+			return errors.New("invalid status")
+		}
+	}
+
+	hasCompletedVisit := false
+	for _, v := range assignment.Visits {
+		if v.Status == "completed" {
+			hasCompletedVisit = true
+			break
+		}
+	}
+
+	updates := map[string]interface{}{}
+
+	if req.SupportEngineerID != nil && *req.SupportEngineerID != uuid.Nil {
+		updates["support_engineer_id"] = *req.SupportEngineerID
+	}
+	if req.Status != nil {
+		updates["status"] = *req.Status
+	}
+	if req.Notes != nil {
+		updates["notes"] = *req.Notes
+	}
+
+	newStart := assignment.AMCStartDate
+	newEnd := assignment.AMCEndDate
+	datesChanged := false
+
+	if req.AMCStartDate != nil && !req.AMCStartDate.Equal(assignment.AMCStartDate) {
+		if hasCompletedVisit {
+			return errors.New("cannot change start date after visits have already been completed")
+		}
+		newStart = *req.AMCStartDate
+		updates["amc_start_date"] = newStart
+		datesChanged = true
+	}
+
+	if req.AMCEndDate != nil && !req.AMCEndDate.Equal(assignment.AMCEndDate) {
+		newEnd = *req.AMCEndDate
+		updates["amc_end_date"] = newEnd
+		datesChanged = true
+	}
+
+	if datesChanged && newStart.After(newEnd) {
+		return errors.New("AMC start date must be before end date")
+	}
+
+	if len(updates) > 0 {
+		if err := s.repo.Update(id, updates); err != nil {
+			return err
+		}
+	}
+
+	if datesChanged {
+		if err := s.regenerateNonCompletedVisits(id, assignment.Visits, newStart, newEnd); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// regenerateNonCompletedVisits re-derives the pending quarterly visit
+// schedule after a date change, without touching visits already completed.
+func (s *AMCAssignmentService) regenerateNonCompletedVisits(
+	assignmentID uuid.UUID,
+	existingVisits []models.AMCVisit,
+	startDate, endDate time.Time,
+) error {
+	// Resume scheduling right after the latest completed quarter, so history
+	// is preserved; fall back to the (possibly new) start date otherwise.
+	regenFrom := startDate
+	for _, v := range existingVisits {
+		if v.Status == "completed" && v.QuarterEndDate.AddDate(0, 0, 1).After(regenFrom) {
+			regenFrom = v.QuarterEndDate.AddDate(0, 0, 1)
+		}
+	}
+
+	if err := s.repo.DeleteNonCompletedVisits(assignmentID); err != nil {
+		return err
+	}
+
+	if regenFrom.After(endDate) {
+		return nil // contract shortened past the last completed visit — nothing left to schedule
+	}
+
+	return s.generateQuarterlyVisits(assignmentID, regenFrom, endDate)
+}
+
+/* =========================
+   DELETE AMC ASSIGNMENT
+========================= */
+
+func (s *AMCAssignmentService) DeleteAMCAssignment(id uuid.UUID) error {
+	if _, err := s.repo.GetByID(id); err != nil {
+		return err
+	}
+	return s.repo.Delete(id)
+}
+
+/* =========================
    HELPER FUNCTIONS
 ========================= */
 

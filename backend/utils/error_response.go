@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 )
 
@@ -67,4 +68,42 @@ func ValidateBindJSON(c *gin.Context, req interface{}) error {
 func ErrorResponseWithStatus(c *gin.Context, statusCode int, err error, publicMsg string) {
 	log.Printf("[ERROR] (HTTP %d) %s: %v", statusCode, publicMsg, err)
 	c.JSON(statusCode, gin.H{"error": publicMsg})
+}
+
+// IsForeignKeyViolation returns true when err represents a Postgres
+// foreign-key constraint violation (SQLSTATE 23503) — i.e. an attempt to
+// delete (or update) a row that is still referenced by another table.
+func IsForeignKeyViolation(err error) bool {
+	if err == nil {
+		return false
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == "23503"
+	}
+	// Fallback for wrapped/driver variations that don't surface *pgconn.PgError
+	msg := err.Error()
+	return strings.Contains(msg, "violates foreign key constraint") ||
+		strings.Contains(msg, "SQLSTATE 23503")
+}
+
+// DeleteConflictResponse sends a clear, actionable 409 response when a
+// delete fails because dependent records still reference the row, falling
+// back to a generic message for any other error.
+func DeleteConflictResponse(c *gin.Context, err error, entityName string) {
+	log.Printf("[ERROR] delete %s failed: %v", entityName, err)
+
+	if IsForeignKeyViolation(err) {
+		c.JSON(http.StatusConflict, gin.H{
+			"error": "Cannot delete " + entityName + ": it is still referenced by other existing records (e.g. tickets, assignments, or contracts). Remove or reassign those first.",
+		})
+		return
+	}
+
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": entityName + " not found"})
+		return
+	}
+
+	c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 }

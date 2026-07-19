@@ -105,7 +105,7 @@ func (s *AuthService) Login(
 
 	// 4️⃣ Force password reset
 	if user.MustResetPassword {
-		return nil, errors.New("PASSWORD_RESET_REQUIRED")
+		return nil, ErrPasswordResetRequired
 	}
 	now := time.Now()
 
@@ -113,7 +113,7 @@ func (s *AuthService) Login(
 	if user.LastPasswordResetAt != nil {
 		days := now.Sub(*user.LastPasswordResetAt).Hours() / 24
 		if days >= 40 {
-			return nil, errors.New("PASSWORD_RESET_REQUIRED")
+			return nil, ErrPasswordResetRequired
 		}
 	}
 
@@ -156,7 +156,7 @@ func (s *AuthService) Login(
 			return nil, err
 		}
 
-		return nil, errors.New("TWO_FA_REQUIRED:" + twoFAToken)
+		return nil, NewErrTwoFARequired(twoFAToken)
 	}
 
 	// 4️⃣ 2FA FLOW (only after first successful login)

@@ -9,6 +9,7 @@ import (
 
 	"rbac/models"
 	"rbac/service"
+	"rbac/utils"
 )
 
 type CustomerSolutionHandler struct {
@@ -161,4 +162,86 @@ func (h *CustomerSolutionHandler) GetAllCustomerSolutions(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, solutions)
+}
+
+/* =========================
+   ADMIN: UPDATE CONTRACT (PO)
+========================= */
+
+func (h *CustomerSolutionHandler) UpdateCustomerSolution(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid contract id"})
+		return
+	}
+
+	var req struct {
+		Description  *string              `json:"description"`
+		ContractType *models.ContractType `json:"contract_type"`
+
+		AMCType      *models.AMCType `json:"amc_type"`
+		AMCStartDate *time.Time      `json:"amc_start_date"`
+		AMCEndDate   *time.Time      `json:"amc_end_date"`
+
+		WarrantyStartDate *time.Time `json:"warranty_start_date"`
+		WarrantyEndDate   *time.Time `json:"warranty_end_date"`
+
+		ChargeableType *models.ChargeableType `json:"chargeable_type"`
+		IsActive       *bool                  `json:"is_active"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+
+	err = h.service.UpdateCustomerSolution(id, &service.UpdateCustomerSolutionRequest{
+		Description:  req.Description,
+		ContractType: req.ContractType,
+
+		AMCType:      req.AMCType,
+		AMCStartDate: req.AMCStartDate,
+		AMCEndDate:   req.AMCEndDate,
+
+		WarrantyStartDate: req.WarrantyStartDate,
+		WarrantyEndDate:   req.WarrantyEndDate,
+
+		ChargeableType: req.ChargeableType,
+		IsActive:       req.IsActive,
+	})
+
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "contract updated successfully"})
+}
+
+/* =========================
+   ADMIN: DELETE CONTRACT (PO)
+========================= */
+
+func (h *CustomerSolutionHandler) DeleteCustomerSolution(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid contract id"})
+		return
+	}
+
+	softDeleted, err := h.service.DeleteCustomerSolution(id)
+	if err != nil {
+		utils.DeleteConflictResponse(c, err, "contract")
+		return
+	}
+
+	if softDeleted {
+		c.JSON(http.StatusOK, gin.H{
+			"message":      "This contract still has related AMC assignments, tickets, or notifications, so it was deactivated instead of permanently deleted. It will no longer appear in active lists.",
+			"soft_deleted": true,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "contract deleted successfully", "soft_deleted": false})
 }
