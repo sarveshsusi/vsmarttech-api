@@ -4,7 +4,9 @@ Go/Gin CRM API: tickets, AMC, contracts, RBAC, 2FA.
 
 **Architecture:** modular monolith (one HTTP API) + optional worker containers. **Not** full microservices. Frontend (e.g. Vercel) talks to a **single** public API URL.
 
-See also: [ARCHITECTURE.md](./ARCHITECTURE.md) · [SECURITY.md](./SECURITY.md) · [openapi.yaml](./openapi.yaml)
+For the full workspace overview (layout, CI/CD, Lightsail, env catalog), see the root [README.md](../README.md).
+
+See also: [ARCHITECTURE.md](./ARCHITECTURE.md) · [SECURITY.md](./SECURITY.md) · [DEPLOY_LIGHTSAIL.md](./DEPLOY_LIGHTSAIL.md) · [openapi.yaml](./openapi.yaml)
 
 ## Quick start (local)
 
