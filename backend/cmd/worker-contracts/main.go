@@ -27,11 +27,14 @@ func main() {
 		log.Fatalf("bootstrap failed: %v", err)
 	}
 
-	jobs.StartContractExpiryCron(app.ContractExpiryService)
+	cron := jobs.NewContractExpiryCron(app.ContractExpiryService)
+	cron.Start()
 	log.Println("worker-contracts running (daily contract expiry checks)")
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	<-sig
+
+	cron.Stop()
 	log.Println("worker-contracts stopped")
 }

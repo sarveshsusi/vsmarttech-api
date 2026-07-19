@@ -262,6 +262,18 @@ cd ~/app/backend
 docker compose up -d --build
 ```
 
+**1 GB RAM tip:** add 1–2 GB swap before the first build to avoid OOM kills:
+
+```bash
+sudo fallocate -l 2G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+```
+
+Compose already sets memory limits (API 256M, Postgres 320M, workers 128M each, Nginx 64M).
+
 ### No domain yet (HTTP via public IP)
 
 1. Lightsail Networking → add **Custom TCP 8081**
@@ -367,10 +379,18 @@ Optional S3: install AWS CLI, set `BACKUP_S3_URI=s3://bucket/vsmart` in `.env` o
 
 ---
 
-## 12. One-command updates
+## 12. One-command updates (with rollback)
 
 ```bash
 ~/scripts/update.sh
+```
+
+If health checks fail, the script restores the previous git commit and rebuilds.
+
+Manual rollback:
+
+```bash
+~/scripts/update.sh --rollback
 ```
 
 ---

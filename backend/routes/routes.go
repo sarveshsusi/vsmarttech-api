@@ -76,7 +76,11 @@ func SetupRoutes(
 
 	protected := api.Group("")
 	protected.Use(middleware.AuthMiddleware(cfg))
-	protected.Use(middleware.RateLimit(60))
+	rateLimit := cfg.Server.RateLimitMax
+	if rateLimit <= 0 {
+		rateLimit = 60
+	}
+	protected.Use(middleware.RateLimit(rateLimit))
 	{
 		modauth.RegisterProtected(protected, authHandler)
 
@@ -98,7 +102,11 @@ func SetupRoutes(
 
 		admin := protected.Group("/admin")
 		admin.Use(middleware.RequireRole(models.RoleAdmin))
-		admin.Use(middleware.RateLimit(30))
+		adminLimit := rateLimit / 2
+		if adminLimit < 10 {
+			adminLimit = 10
+		}
+		admin.Use(middleware.RateLimit(adminLimit))
 		{
 			modauth.RegisterAdminUsers(admin, authHandler)
 			modcrm.RegisterAdmin(admin, crmHandlers)

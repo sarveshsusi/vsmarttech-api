@@ -162,10 +162,12 @@ func wireHTTP(
 		log.Printf("warning: SetTrustedProxies: %v", err)
 	}
 
-	corsOrigins := []string{
-		"http://localhost:5173",
-		"http://127.0.0.1:5173",
-		cfg.FrontendURL,
+	corsOrigins := []string{cfg.FrontendURL}
+	if cfg.Server.Env != "production" {
+		corsOrigins = append(corsOrigins,
+			"http://localhost:5173",
+			"http://127.0.0.1:5173",
+		)
 	}
 	r.Use(middleware.CORSMiddleware(corsOrigins))
 

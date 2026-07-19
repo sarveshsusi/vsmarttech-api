@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"strconv"
@@ -29,7 +30,10 @@ type ServerConfig struct {
 }
 
 type DatabaseConfig struct {
-	URL string
+	URL          string
+	MaxOpenConns int
+	MaxIdleConns int
+	ConnMaxLife  time.Duration
 }
 
 type JWTConfig struct {
@@ -97,13 +101,30 @@ func LoadConfig() *Config {
 	env := getEnv("APP_ENV", "development")
 	accessSecret := os.Getenv("JWT_ACCESS_SECRET")
 	refreshSecret := os.Getenv("JWT_REFRESH_SECRET")
+	rememberSecret := os.Getenv("REMEMBER_DEVICE_SECRET")
+	dbURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
+	frontendURL := getEnv("FRONTEND_URL", "http://localhost:5173")
+	storageType := getEnv("STORAGE_TYPE", "local")
 
 	if env == "production" {
+		mustRejectPlaceholder("JWT_ACCESS_SECRET", accessSecret, "access-secret", "CHANGE_ME")
+		mustRejectPlaceholder("JWT_REFRESH_SECRET", refreshSecret, "refresh-secret", "CHANGE_ME")
 		if accessSecret == "" || refreshSecret == "" {
 			log.Fatal("JWT_ACCESS_SECRET and JWT_REFRESH_SECRET are required when APP_ENV=production")
 		}
-		if accessSecret == "access-secret" || refreshSecret == "refresh-secret" {
-			log.Fatal("refusing to start with default JWT secrets in production")
+		if dbURL == "" {
+			log.Fatal("DATABASE_URL is required when APP_ENV=production")
+		}
+		if rememberSecret == "" || strings.Contains(rememberSecret, "CHANGE_ME") {
+			log.Fatal("REMEMBER_DEVICE_SECRET is required when APP_ENV=production")
+		}
+		if frontendURL == "" || frontendURL == "http://localhost:5173" || strings.Contains(frontendURL, "your-app.vercel.app") || strings.Contains(frontendURL, "yourdomain.com") {
+			log.Fatal("FRONTEND_URL must be set to your real Vercel/CRM origin when APP_ENV=production")
+		}
+		if storageType == "s3" {
+			if getEnv("AWS_ACCESS_KEY_ID", "") == "" || getEnv("AWS_SECRET_ACCESS_KEY", "") == "" || getEnv("AWS_S3_BUCKET", "") == "" {
+				log.Fatal("AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_S3_BUCKET are required when STORAGE_TYPE=s3 in production")
+			}
 		}
 	} else {
 		if accessSecret == "" {
@@ -120,12 +141,15 @@ func LoadConfig() *Config {
 		Server: ServerConfig{
 			Port:              getEnv("SERVER_PORT", "8080"),
 			Env:               env,
-			RateLimitMax:      getEnvAsInt("RATE_LIMIT_MAX", 1000),
+			RateLimitMax:      getEnvAsInt("RATE_LIMIT_MAX", 60),
 			TrustedProxies:    getEnvCSV("TRUSTED_PROXIES", []string{"nginx", "172.16.0.0/12", "10.0.0.0/8"}),
 			RunInProcessCrons: getEnvAsBool("RUN_INPROCESS_CRONS", true),
 		},
 		Database: DatabaseConfig{
-			URL: getEnv("DATABASE_URL", ""),
+			URL:          dbURL,
+			MaxOpenConns: getEnvAsInt("DB_MAX_OPEN_CONNS", 10),
+			MaxIdleConns: getEnvAsInt("DB_MAX_IDLE_CONNS", 3),
+			ConnMaxLife:  time.Duration(getEnvAsInt("DB_CONN_MAX_LIFETIME_MINUTES", 30)) * time.Minute,
 		},
 		JWT: JWTConfig{
 			AccessSecret:  accessSecret,
@@ -133,7 +157,7 @@ func LoadConfig() *Config {
 			AccessExpiry:  time.Duration(getEnvAsInt("JWT_ACCESS_EXPIRY_MINUTES", 15)) * time.Minute,
 			RefreshExpiry: time.Duration(getEnvAsInt("JWT_REFRESH_EXPIRY_DAYS", 7)) * 24 * time.Hour,
 		},
-		FrontendURL: getEnv("FRONTEND_URL", "http://localhost:5173"),
+		FrontendURL: frontendURL,
 
 		Mail: MailConfig{
 			Host:     getEnv("MAIL_HOST", ""),
@@ -150,7 +174,7 @@ func LoadConfig() *Config {
 		},
 
 		Storage: StorageConfig{
-			Type:     getEnv("STORAGE_TYPE", "local"), // "local" for development, "s3" for production
+			Type:     storageType,
 			LocalDir: getEnv("STORAGE_LOCAL_DIR", "./uploads"),
 			BaseURL:  getEnv("STORAGE_BASE_URL", "http://localhost:8080/uploads"),
 		},
@@ -168,6 +192,14 @@ func LoadConfig() *Config {
 			CompressThresholdBytes: getEnvAsInt64("IMAGE_COMPRESS_THRESHOLD_BYTES", 51200), // 50 KB
 			Quality:                getEnvAsInt("IMAGE_QUALITY", 85),
 		},
+	}
+}
+
+func mustRejectPlaceholder(name, value string, forbidden ...string) {
+	for _, f := range forbidden {
+		if value == f || strings.Contains(value, f) {
+			log.Fatal(fmt.Sprintf("refusing to start with placeholder %s in production", name))
+		}
 	}
 }
 

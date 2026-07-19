@@ -35,6 +35,8 @@ func TestLoadConfigDevelopmentDefaults(t *testing.T) {
 	t.Setenv("JWT_ACCESS_SECRET", "")
 	t.Setenv("JWT_REFRESH_SECRET", "")
 	t.Setenv("RUN_INPROCESS_CRONS", "true")
+	t.Setenv("DB_MAX_OPEN_CONNS", "5")
+	t.Setenv("RATE_LIMIT_MAX", "60")
 
 	cfg := LoadConfig()
 	if cfg.JWT.AccessSecret == "" || cfg.JWT.RefreshSecret == "" {
@@ -42,5 +44,11 @@ func TestLoadConfigDevelopmentDefaults(t *testing.T) {
 	}
 	if !cfg.Server.RunInProcessCrons {
 		t.Fatal("expected RunInProcessCrons true")
+	}
+	if cfg.Database.MaxOpenConns != 5 {
+		t.Fatalf("expected MaxOpenConns 5, got %d", cfg.Database.MaxOpenConns)
+	}
+	if cfg.Server.RateLimitMax != 60 {
+		t.Fatalf("expected RateLimitMax 60, got %d", cfg.Server.RateLimitMax)
 	}
 }
