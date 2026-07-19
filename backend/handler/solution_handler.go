@@ -2,6 +2,7 @@ package handler
 
 import (
 	"rbac/service"
+	"rbac/utils"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -78,7 +79,7 @@ func (h *SolutionHandler) Delete(c *gin.Context) {
 	}
 
 	if err := h.service.Delete(uid); err != nil {
-		c.JSON(400, gin.H{"error": "invalid request"})
+		utils.DeleteConflictResponse(c, err, "solution")
 		return
 	}
 

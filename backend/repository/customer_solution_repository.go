@@ -83,6 +83,41 @@ func (r *CustomerSolutionRepository) GetByID(
 
 	return &cs, err
 }
+
+// GetByIDAny fetches a customer solution regardless of its is_active flag —
+// used by update/delete flows where an inactive record may still need editing.
+func (r *CustomerSolutionRepository) GetByIDAny(
+	id uuid.UUID,
+) (*models.CustomerSolution, error) {
+
+	var cs models.CustomerSolution
+
+	err := r.db.
+		Preload("Customer").
+		Preload("Solution").
+		First(&cs, "id = ?", id).
+		Error
+
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("contract not found")
+		}
+		return nil, err
+	}
+
+	return &cs, nil
+}
+
+// Update applies a partial update to a customer solution (PO/contract).
+func (r *CustomerSolutionRepository) Update(id uuid.UUID, updates map[string]interface{}) error {
+	return r.db.Model(&models.CustomerSolution{}).Where("id = ?", id).Updates(updates).Error
+}
+
+// Delete hard-deletes a customer solution (PO/contract). Fails with a
+// foreign-key violation if tickets or AMC assignments still reference it.
+func (r *CustomerSolutionRepository) Delete(id uuid.UUID) error {
+	return r.db.Delete(&models.CustomerSolution{}, "id = ?", id).Error
+}
 func (r *CustomerSolutionRepository) GetByCustomer(
 	customerID uuid.UUID,
 ) ([]models.CustomerSolution, error) {

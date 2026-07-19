@@ -11,6 +11,7 @@ import (
 	"rbac/config"
 	"rbac/models"
 	"rbac/service"
+	"rbac/utils"
 )
 
 type AuthHandler struct {
@@ -603,7 +604,7 @@ func (h *AuthHandler) DeleteUser(c *gin.Context) {
 	}
 
 	if err := h.service.DeleteUser(uid); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		utils.DeleteConflictResponse(c, err, "user")
 		return
 	}
 

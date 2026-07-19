@@ -265,6 +265,77 @@ func (h *AMCAssignmentHandler) GetVisitProofs(c *gin.Context) {
 
 /*
 	=========================
+	  ADMIN: UPDATE AMC ASSIGNMENT
+
+=========================
+*/
+func (h *AMCAssignmentHandler) UpdateAMCAssignment(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid assignment id"})
+		return
+	}
+
+	var req struct {
+		SupportEngineerID *uuid.UUID `json:"support_engineer_id"`
+		AMCStartDate      *time.Time `json:"amc_start_date"`
+		AMCEndDate        *time.Time `json:"amc_end_date"`
+		Status            *string    `json:"status"`
+		Notes             *string    `json:"notes"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+
+	err = h.service.UpdateAMCAssignment(id, &service.UpdateAMCAssignmentRequest{
+		SupportEngineerID: req.SupportEngineerID,
+		AMCStartDate:      req.AMCStartDate,
+		AMCEndDate:        req.AMCEndDate,
+		Status:            req.Status,
+		Notes:             req.Notes,
+	})
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	updated, err := h.service.GetAMCAssignment(id)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"message": "AMC assignment updated successfully"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":    "AMC assignment updated successfully",
+		"assignment": updated,
+	})
+}
+
+/*
+	=========================
+	  ADMIN: DELETE AMC ASSIGNMENT
+
+=========================
+*/
+func (h *AMCAssignmentHandler) DeleteAMCAssignment(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid assignment id"})
+		return
+	}
+
+	if err := h.service.DeleteAMCAssignment(id); err != nil {
+		utils.DeleteConflictResponse(c, err, "AMC assignment")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "AMC assignment deleted successfully"})
+}
+
+/*
+	=========================
 	  DOWNLOAD PROOF IMAGE
 
 =========================

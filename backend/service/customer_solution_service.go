@@ -9,6 +9,7 @@ import (
 
 	"rbac/models"
 	"rbac/repository"
+	"rbac/utils"
 )
 
 type CustomerSolutionService struct {
@@ -138,4 +139,147 @@ func (s *CustomerSolutionService) GetCustomerSolutionsByUserID(
 
 func (s *CustomerSolutionService) GetAll() ([]models.CustomerSolution, error) {
 	return s.repo.GetAll()
+}
+
+/* =========================
+   ADMIN: UPDATE CONTRACT (PO)
+========================= */
+
+type UpdateCustomerSolutionRequest struct {
+	Description  *string
+	ContractType *models.ContractType
+
+	AMCType      *models.AMCType
+	AMCStartDate *time.Time
+	AMCEndDate   *time.Time
+
+	WarrantyStartDate *time.Time
+	WarrantyEndDate   *time.Time
+
+	ChargeableType *models.ChargeableType
+
+	IsActive *bool
+}
+
+func (s *CustomerSolutionService) UpdateCustomerSolution(
+	id uuid.UUID,
+	req *UpdateCustomerSolutionRequest,
+) error {
+	cs, err := s.repo.GetByIDAny(id)
+	if err != nil {
+		return err
+	}
+
+	if req.ContractType != nil {
+		switch *req.ContractType {
+		case models.ContractAMC, models.ContractWarranty, models.ContractOthers:
+		default:
+			return errors.New("invalid contract type")
+		}
+	}
+
+	// Resolve the effective value of every contract-type-specific field
+	// (either the incoming update or the existing value) so we can validate
+	// the whole record consistently, regardless of which fields were sent.
+	contractType := cs.ContractType
+	amcType := cs.AMCType
+	amcStart := cs.AMCStartDate
+	amcEnd := cs.AMCEndDate
+	warrantyStart := cs.WarrantyStartDate
+	warrantyEnd := cs.WarrantyEndDate
+	chargeableType := cs.ChargeableType
+
+	updates := map[string]interface{}{}
+
+	if req.ContractType != nil {
+		contractType = *req.ContractType
+		updates["contract_type"] = *req.ContractType
+	}
+	if req.Description != nil {
+		updates["description"] = *req.Description
+	}
+	if req.IsActive != nil {
+		updates["is_active"] = *req.IsActive
+	}
+	if req.AMCType != nil {
+		amcType = req.AMCType
+		updates["amc_type"] = req.AMCType
+	}
+	if req.AMCStartDate != nil {
+		amcStart = req.AMCStartDate
+		updates["amc_start_date"] = req.AMCStartDate
+	}
+	if req.AMCEndDate != nil {
+		amcEnd = req.AMCEndDate
+		updates["amc_end_date"] = req.AMCEndDate
+	}
+	if req.WarrantyStartDate != nil {
+		warrantyStart = req.WarrantyStartDate
+		updates["warranty_start_date"] = req.WarrantyStartDate
+	}
+	if req.WarrantyEndDate != nil {
+		warrantyEnd = req.WarrantyEndDate
+		updates["warranty_end_date"] = req.WarrantyEndDate
+	}
+	if req.ChargeableType != nil {
+		chargeableType = req.ChargeableType
+		updates["chargeable_type"] = req.ChargeableType
+	}
+
+	if contractType == models.ContractAMC {
+		if amcType == nil || amcStart == nil || amcEnd == nil {
+			return errors.New("invalid AMC details")
+		}
+		if amcStart.After(*amcEnd) {
+			return errors.New("AMC start date must be before end date")
+		}
+	}
+
+	if contractType == models.ContractWarranty {
+		if warrantyStart == nil || warrantyEnd == nil {
+			return errors.New("invalid warranty details")
+		}
+		if warrantyStart.After(*warrantyEnd) {
+			return errors.New("warranty start date must be before end date")
+		}
+	}
+
+	if contractType == models.ContractOthers {
+		if chargeableType == nil {
+			return errors.New("invalid chargeable type")
+		}
+	}
+
+	if len(updates) == 0 {
+		return nil
+	}
+
+	return s.repo.Update(id, updates)
+}
+
+/* =========================
+   ADMIN: DELETE CONTRACT (PO)
+========================= */
+
+// DeleteCustomerSolution attempts a hard delete of the contract. If it is
+// still referenced by real records (AMC assignments, tickets, notifications,
+// etc.) it automatically falls back to a soft delete (is_active = false) so
+// the action always succeeds, while genuinely preserving history/integrity.
+// The returned bool reports whether a soft delete was performed instead.
+func (s *CustomerSolutionService) DeleteCustomerSolution(id uuid.UUID) (bool, error) {
+	if _, err := s.repo.GetByIDAny(id); err != nil {
+		return false, err
+	}
+
+	if err := s.repo.Delete(id); err != nil {
+		if utils.IsForeignKeyViolation(err) {
+			if softErr := s.repo.Update(id, map[string]interface{}{"is_active": false}); softErr != nil {
+				return false, softErr
+			}
+			return true, nil
+		}
+		return false, err
+	}
+
+	return false, nil
 }

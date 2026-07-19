@@ -158,20 +158,18 @@ func (h *TicketHandler) AssignTicket(c *gin.Context) {
    SUPPORT: START TICKET
 ========================= */
 
-type StartTicketRequest struct {
-	TicketID string `json:"ticket_id" binding:"required"`
-}
-
 func (h *TicketHandler) StartTicket(c *gin.Context) {
 	engineerID := c.MustGet("user_id").(uuid.UUID)
 
-	var req StartTicketRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+	// Extract ticket ID from URL path (e.g., /tickets/VS/06/26/1/start)
+	// Trim the leading slash from catch-all parameter
+	ticketID := strings.TrimPrefix(c.Param("id"), "/")
+	if ticketID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ticket_id is required"})
 		return
 	}
 
-	if err := h.service.StartTicket(req.TicketID, engineerID); err != nil {
+	if err := h.service.StartTicket(ticketID, engineerID); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}

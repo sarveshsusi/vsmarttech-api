@@ -3,35 +3,31 @@
 # ================================
 FROM golang:1.25-alpine AS builder
 
-# Install build dependencies (needed for CGO-free postgres driver)
 RUN apk add --no-cache git
 
 WORKDIR /build
 
-# Cache dependency downloads separately from source
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy full source
 COPY . .
 
-# Build binary from ./main package
-# CGO_ENABLED=0 produces a fully static binary for the minimal runtime image
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o server ./main
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/api ./cmd/api \
+ && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/worker-sla ./cmd/worker-sla \
+ && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/worker-contracts ./cmd/worker-contracts
 
 # ================================
-# Stage 2: Runtime
+# Stage 2: Runtime (shared image, different CMD per service)
 # ================================
 FROM alpine:3.21
 
-# ca-certificates: needed for HTTPS calls (AWS S3, Mailtrap, Supabase)
-# tzdata: needed for cron jobs / timezone-aware scheduling
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk add --no-cache ca-certificates tzdata curl
 
 WORKDIR /app
 
-COPY --from=builder /build/server .
+COPY --from=builder /out/api /out/worker-sla /out/worker-contracts ./
 
 EXPOSE 8080
 
-CMD ["./server"]
+# Default process is the HTTP API; Compose overrides CMD for workers.
+CMD ["./api"]

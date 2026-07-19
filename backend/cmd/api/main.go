@@ -8,7 +8,6 @@ import (
 	"rbac/internal/bootstrap"
 )
 
-// Deprecated: prefer cmd/api. Kept for local compatibility with older scripts.
 func main() {
 	if err := godotenv.Load(); err != nil {
 		log.Println("no .env file found, using system env vars")
@@ -22,9 +21,10 @@ func main() {
 		log.Fatalf("bootstrap failed: %v", err)
 	}
 
-	log.Printf("API listening on :%s [%s] (legacy main entry; use cmd/api)",
+	log.Printf("API listening on :%s [%s] (in-process crons=%v)",
 		app.Config.Server.Port,
 		app.Config.Server.Env,
+		app.Config.Server.RunInProcessCrons,
 	)
 	if err := app.Engine.Run(":" + app.Config.Server.Port); err != nil {
 		log.Fatal(err)

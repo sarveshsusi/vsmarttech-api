@@ -1,8 +1,10 @@
 package config
 
 import (
+	"log"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -19,9 +21,11 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Port         string
-	Env          string
-	RateLimitMax int // Max requests per minute
+	Port              string
+	Env               string
+	RateLimitMax      int // Max requests per minute
+	TrustedProxies    []string
+	RunInProcessCrons bool // When false, SLA/contract crons run in worker containers
 }
 
 type DatabaseConfig struct {
@@ -90,20 +94,44 @@ type ImageConfig struct {
 }
 
 func LoadConfig() *Config {
+	env := getEnv("APP_ENV", "development")
+	accessSecret := os.Getenv("JWT_ACCESS_SECRET")
+	refreshSecret := os.Getenv("JWT_REFRESH_SECRET")
+
+	if env == "production" {
+		if accessSecret == "" || refreshSecret == "" {
+			log.Fatal("JWT_ACCESS_SECRET and JWT_REFRESH_SECRET are required when APP_ENV=production")
+		}
+		if accessSecret == "access-secret" || refreshSecret == "refresh-secret" {
+			log.Fatal("refusing to start with default JWT secrets in production")
+		}
+	} else {
+		if accessSecret == "" {
+			accessSecret = "access-secret"
+			log.Println("warning: JWT_ACCESS_SECRET unset; using insecure development default")
+		}
+		if refreshSecret == "" {
+			refreshSecret = "refresh-secret"
+			log.Println("warning: JWT_REFRESH_SECRET unset; using insecure development default")
+		}
+	}
+
 	return &Config{
 		Server: ServerConfig{
-			Port:         getEnv("SERVER_PORT", "8080"),
-			Env:          getEnv("APP_ENV", "development"),
-			RateLimitMax: getEnvAsInt("RATE_LIMIT_MAX", 1000), // 1000 requests/min for dev, use env to override
+			Port:              getEnv("SERVER_PORT", "8080"),
+			Env:               env,
+			RateLimitMax:      getEnvAsInt("RATE_LIMIT_MAX", 1000),
+			TrustedProxies:    getEnvCSV("TRUSTED_PROXIES", []string{"nginx", "172.16.0.0/12", "10.0.0.0/8"}),
+			RunInProcessCrons: getEnvAsBool("RUN_INPROCESS_CRONS", true),
 		},
 		Database: DatabaseConfig{
 			URL: getEnv("DATABASE_URL", ""),
 		},
 		JWT: JWTConfig{
-			AccessSecret:  getEnv("JWT_ACCESS_SECRET", "access-secret"),
-			RefreshSecret: getEnv("JWT_REFRESH_SECRET", "refresh-secret"),
-			AccessExpiry:  15 * time.Minute,
-			RefreshExpiry: 7 * 24 * time.Hour,
+			AccessSecret:  accessSecret,
+			RefreshSecret: refreshSecret,
+			AccessExpiry:  time.Duration(getEnvAsInt("JWT_ACCESS_EXPIRY_MINUTES", 15)) * time.Minute,
+			RefreshExpiry: time.Duration(getEnvAsInt("JWT_REFRESH_EXPIRY_DAYS", 7)) * 24 * time.Hour,
 		},
 		FrontendURL: getEnv("FRONTEND_URL", "http://localhost:5173"),
 
@@ -170,4 +198,35 @@ func getEnvAsInt64(key string, fallback int64) int64 {
 		}
 	}
 	return fallback
+}
+
+func getEnvAsBool(key string, fallback bool) bool {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return fallback
+	}
+	return b
+}
+
+func getEnvCSV(key string, fallback []string) []string {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return fallback
+	}
+	parts := strings.Split(v, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	if len(out) == 0 {
+		return fallback
+	}
+	return out
 }

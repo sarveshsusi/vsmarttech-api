@@ -114,6 +114,35 @@ func (r *AMCAssignmentRepository) Update(id uuid.UUID, updates map[string]interf
 	return r.db.Model(&models.AMCAssignment{}).Where("id = ?", id).Updates(updates).Error
 }
 
+// Delete removes an AMC assignment along with its visits and proofs.
+// We cascade explicitly in a transaction instead of relying on a DB-level
+// ON DELETE CASCADE, since the live schema is created by GORM AutoMigrate
+// (see database/migrate.go) and does not carry that constraint.
+func (r *AMCAssignmentRepository) Delete(id uuid.UUID) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var visitIDs []uuid.UUID
+		if err := tx.Model(&models.AMCVisit{}).
+			Where("amc_assignment_id = ?", id).
+			Pluck("id", &visitIDs).Error; err != nil {
+			return err
+		}
+
+		if len(visitIDs) > 0 {
+			if err := tx.Where("amc_visit_id IN ?", visitIDs).
+				Delete(&models.AMCVisitProof{}).Error; err != nil {
+				return err
+			}
+
+			if err := tx.Where("amc_assignment_id = ?", id).
+				Delete(&models.AMCVisit{}).Error; err != nil {
+				return err
+			}
+		}
+
+		return tx.Delete(&models.AMCAssignment{}, "id = ?", id).Error
+	})
+}
+
 /* =========================
    AMC VISIT METHODS
 ========================= */
@@ -160,6 +189,33 @@ func (r *AMCAssignmentRepository) GetVisitsByAssignment(assignmentID uuid.UUID) 
 		Find(&visits).Error
 
 	return visits, err
+}
+
+// DeleteNonCompletedVisits removes all pending/overdue (not-yet-completed)
+// visits for an assignment — used when AMC dates change and the visit
+// schedule needs to be regenerated without touching completed history.
+// Cascades explicitly to any proofs uploaded against those visits, for the
+// same reason Delete() does on AMCAssignmentRepository.
+func (r *AMCAssignmentRepository) DeleteNonCompletedVisits(assignmentID uuid.UUID) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var visitIDs []uuid.UUID
+		if err := tx.Model(&models.AMCVisit{}).
+			Where("amc_assignment_id = ? AND status != ?", assignmentID, "completed").
+			Pluck("id", &visitIDs).Error; err != nil {
+			return err
+		}
+
+		if len(visitIDs) == 0 {
+			return nil
+		}
+
+		if err := tx.Where("amc_visit_id IN ?", visitIDs).
+			Delete(&models.AMCVisitProof{}).Error; err != nil {
+			return err
+		}
+
+		return tx.Where("id IN ?", visitIDs).Delete(&models.AMCVisit{}).Error
+	})
 }
 
 // CompleteVisit marks visit as completed

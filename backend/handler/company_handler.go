@@ -5,6 +5,7 @@ import (
 
 	"rbac/dto"
 	"rbac/service"
+	"rbac/utils"
 
 	"github.com/gin-gonic/gin"
 )
@@ -83,7 +84,7 @@ func (h *CompanyHandler) DeleteCompany(c *gin.Context) {
 	id := c.Param("id")
 
 	if err := h.service.DeleteCompany(id); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		utils.DeleteConflictResponse(c, err, "company")
 		return
 	}
 

@@ -5,12 +5,11 @@
 .env.*
 .git
 .gitignore
-*.md
-main/main     # compiled binary (dev)
-server        # compiled binary (dev)
-
-# Test files
-*_test.go
+main/main
+app
+server
+*.tar
+myapp-api.tar
 
 # Local uploads (S3 is used in production)
 uploads/

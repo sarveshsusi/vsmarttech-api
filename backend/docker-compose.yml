@@ -3,23 +3,73 @@ version: "3.9"
 services:
 
   # ================================
-  # Go Backend
+  # HTTP API (modular monolith)
   # ================================
-  backend:
+  api:
     build: .
-    container_name: go-backend
+    container_name: vsmart-api
     restart: always
+    command: ["./api"]
     env_file:
       - .env
+    environment:
+      # Workers own cron jobs in this Compose stack
+      RUN_INPROCESS_CRONS: "false"
+      TRUSTED_PROXIES: "nginx,172.16.0.0/12,10.0.0.0/8"
     depends_on:
       postgres:
         condition: service_healthy
     networks:
       - internal
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     # No direct port exposure — nginx proxies all traffic
 
   # ================================
-  # PostgreSQL Database
+  # Background workers (same image, different CMD)
+  # ================================
+  worker-sla:
+    build: .
+    container_name: vsmart-worker-sla
+    restart: always
+    command: ["./worker-sla"]
+    env_file:
+      - .env
+    environment:
+      RUN_INPROCESS_CRONS: "false"
+      APP_ENV: ${APP_ENV:-production}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    networks:
+      - internal
+
+  worker-contracts:
+    build: .
+    container_name: vsmart-worker-contracts
+    restart: always
+    command: ["./worker-contracts"]
+    env_file:
+      - .env
+    environment:
+      RUN_INPROCESS_CRONS: "false"
+      APP_ENV: ${APP_ENV:-production}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    networks:
+      - internal
+
+  # ================================
+  # PostgreSQL (single shared DB — do not split yet)
   # ================================
   postgres:
     image: postgres:15-alpine
@@ -41,18 +91,19 @@ services:
     # IMPORTANT: Do NOT expose port 5432 publicly
 
   # ================================
-  # Nginx Reverse Proxy
+  # Nginx reverse proxy / API gateway
   # ================================
   nginx:
     image: nginx:stable-alpine
     container_name: nginx
     restart: always
     ports:
-      - "80:80"
+      - "8081:80"
     volumes:
       - ./nginx/conf:/etc/nginx/conf.d:ro
     depends_on:
-      - backend
+      api:
+        condition: service_healthy
     networks:
       - internal
 

@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+
+jobs:
+  backend:
+    name: Backend build & test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build API
+        run: CGO_ENABLED=0 go build -o /tmp/api ./cmd/api
+
+      - name: Build workers
+        run: |
+          CGO_ENABLED=0 go build -o /tmp/worker-sla ./cmd/worker-sla
+          CGO_ENABLED=0 go build -o /tmp/worker-contracts ./cmd/worker-contracts
