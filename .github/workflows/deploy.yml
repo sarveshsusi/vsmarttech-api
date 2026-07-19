@@ -3,14 +3,15 @@ name: Deploy Backend
 on:
   push:
     branches:
-      - main
+      - master
 
 jobs:
   deploy:
+    name: Deploy to Lightsail
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy to Lightsail
+      - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ secrets.HOST }}
@@ -19,23 +20,32 @@ jobs:
           script: |
             set -e
 
+            echo "===== Starting deployment ====="
+
             cd ~/app/backend
 
-            echo "Pulling latest code..."
+            echo "Fetching latest code..."
             git fetch origin
-            git reset --hard origin/main
 
-            echo "Building containers..."
+            echo "Switching to master..."
+            git checkout master
+
+            echo "Resetting to latest master..."
+            git reset --hard origin/master
+
+            echo "Building Docker images..."
             docker compose build
 
-            echo "Starting updated services..."
+            echo "Starting containers..."
             docker compose up -d --remove-orphans
 
-            echo "Cleaning unused images..."
+            echo "Removing unused Docker images..."
             docker image prune -f
 
-            echo "Verifying health..."
-            curl -fsS --max-time 15 http://127.0.0.1:8081/healthz
-            curl -fsS --max-time 15 http://127.0.0.1:8081/readyz
+            echo "Waiting for application..."
+            sleep 10
 
-            echo "Deployment completed."
+            echo "Checking health..."
+            curl -f http://127.0.0.1:8081/healthz
+
+            echo "===== Deployment completed successfully ====="
