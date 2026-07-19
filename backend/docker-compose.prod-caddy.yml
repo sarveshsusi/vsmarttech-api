@@ -1,0 +1,7 @@
+# Optional: bind Nginx to localhost only (use when Caddy terminates TLS on 80/443).
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.prod-caddy.yml up -d
+services:
+  nginx:
+    ports: !override
+      - "127.0.0.1:8081:80"

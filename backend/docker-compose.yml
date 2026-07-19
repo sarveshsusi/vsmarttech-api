@@ -1,4 +1,9 @@
-version: "3.9"
+# x-logging is reused by every service (prevents Docker logs filling the disk)
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
 
 services:
 
@@ -8,12 +13,11 @@ services:
   api:
     build: .
     container_name: vsmart-api
-    restart: always
+    restart: unless-stopped
     command: ["./api"]
     env_file:
       - .env
     environment:
-      # Workers own cron jobs in this Compose stack
       RUN_INPROCESS_CRONS: "false"
       TRUSTED_PROXIES: "nginx,172.16.0.0/12,10.0.0.0/8"
     depends_on:
@@ -23,19 +27,20 @@ services:
       - internal
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/healthz || exit 1"]
-      interval: 15s
+      interval: 30s
       timeout: 5s
-      retries: 5
-      start_period: 30s
-    # No direct port exposure — nginx proxies all traffic
+      retries: 3
+      start_period: 40s
+    logging: *default-logging
+    # No host ports — Nginx (and optional Caddy) proxy traffic
 
   # ================================
-  # Background workers (same image, different CMD)
+  # Background workers
   # ================================
   worker-sla:
     build: .
     container_name: vsmart-worker-sla
-    restart: always
+    restart: unless-stopped
     command: ["./worker-sla"]
     env_file:
       - .env
@@ -49,11 +54,12 @@ services:
         condition: service_healthy
     networks:
       - internal
+    logging: *default-logging
 
   worker-contracts:
     build: .
     container_name: vsmart-worker-contracts
-    restart: always
+    restart: unless-stopped
     command: ["./worker-contracts"]
     env_file:
       - .env
@@ -67,14 +73,15 @@ services:
         condition: service_healthy
     networks:
       - internal
+    logging: *default-logging
 
   # ================================
-  # PostgreSQL (single shared DB — do not split yet)
+  # PostgreSQL — NEVER publish 5432 to the internet
   # ================================
   postgres:
     image: postgres:15-alpine
     container_name: postgres
-    restart: always
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -88,16 +95,18 @@ services:
       retries: 5
     networks:
       - internal
-    # IMPORTANT: Do NOT expose port 5432 publicly
+    logging: *default-logging
 
   # ================================
-  # Nginx reverse proxy / API gateway
+  # Nginx reverse proxy
   # ================================
   nginx:
     image: nginx:stable-alpine
     container_name: nginx
-    restart: always
+    restart: unless-stopped
     ports:
+      # Bound on host 8081. Lock this down with Lightsail firewall + UFW.
+      # With Caddy: reverse_proxy 127.0.0.1:8081 and do NOT open 8081 publicly.
       - "8081:80"
     volumes:
       - ./nginx/conf:/etc/nginx/conf.d:ro
@@ -106,6 +115,7 @@ services:
         condition: service_healthy
     networks:
       - internal
+    logging: *default-logging
 
 networks:
   internal:

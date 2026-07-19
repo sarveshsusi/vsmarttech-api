@@ -7,7 +7,7 @@ backend/.env
 backend/.env.local
 backend/.env.*.local
 backend/.env.production
-backend/.env.*.local
+backend/docker-compose.override.yml
 
 # Compiled binaries / artifacts (never commit)
 backend/bin/
