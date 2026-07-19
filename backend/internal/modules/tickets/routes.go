@@ -14,7 +14,6 @@ type Handlers struct {
 
 // RegisterCommon mounts upload helpers shared across roles.
 func RegisterCommon(protected *gin.RouterGroup, h Handlers) {
-	protected.GET("/imagekit/auth", h.Ticket.GetImageKitAuthToken)
 	protected.POST("/upload/proof", h.Ticket.UploadProofImage)
 }
 

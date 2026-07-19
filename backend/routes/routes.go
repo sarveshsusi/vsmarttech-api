@@ -4,14 +4,15 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 
 	"rbac/config"
 	"rbac/handler"
 	"rbac/middleware"
 	"rbac/models"
 
-	modauth "rbac/internal/modules/auth"
 	modamc "rbac/internal/modules/amc"
+	modauth "rbac/internal/modules/auth"
 	modcrm "rbac/internal/modules/crm"
 	modnotify "rbac/internal/modules/notify"
 	modtickets "rbac/internal/modules/tickets"
@@ -20,6 +21,7 @@ import (
 func SetupRoutes(
 	r *gin.Engine,
 	cfg *config.Config,
+	db *gorm.DB,
 
 	authHandler *handler.AuthHandler,
 
@@ -42,7 +44,6 @@ func SetupRoutes(
 	amcHandler *handler.AMCAssignmentHandler,
 ) {
 	// Security middleware is applied once in bootstrap (CORS + headers + audit).
-	// Do not re-register CORSSecureMiddleware / SecurityHeadersMiddleware here.
 
 	if cfg.Storage.Type == "local" {
 		r.Static("/uploads", cfg.Storage.LocalDir)
@@ -50,6 +51,23 @@ func SetupRoutes(
 
 	r.GET("/healthz", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+
+	r.GET("/readyz", func(c *gin.Context) {
+		if db == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "not_ready", "reason": "db_nil"})
+			return
+		}
+		sqlDB, err := db.DB()
+		if err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "not_ready", "reason": err.Error()})
+			return
+		}
+		if err := sqlDB.Ping(); err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "not_ready", "reason": "db_ping_failed"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "ready"})
 	})
 
 	api := r.Group("/api/v1")

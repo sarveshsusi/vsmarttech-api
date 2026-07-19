@@ -7,8 +7,11 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// BcryptCost is the shared password hash cost across the codebase.
+const BcryptCost = 12
+
 func HashPassword(password string) (string, error) {
-	bytes, err := bcrypt.GenerateFromPassword([]byte(password), 12)
+	bytes, err := bcrypt.GenerateFromPassword([]byte(password), BcryptCost)
 	return string(bytes), err
 }
 

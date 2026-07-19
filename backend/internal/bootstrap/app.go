@@ -151,7 +151,9 @@ func wireHTTP(
 	amcHandler := handler.NewAMCAssignmentHandler(amcService, imageUploader, supportEngineerRepo)
 
 	r := gin.New()
-	r.Use(gin.Logger(), middleware.SafeRecovery())
+	r.Use(middleware.RequestIDMiddleware())
+	r.Use(middleware.StructuredAccessLog())
+	r.Use(middleware.SafeRecovery())
 	r.Use(middleware.SecurityHeaders())
 	r.Use(middleware.AuditLog())
 	r.Use(middleware.MaxBodySize(1 << 20))
@@ -166,6 +168,7 @@ func wireHTTP(
 	routes.SetupRoutes(
 		r,
 		cfg,
+		db,
 		authHandler,
 		adminDashboard,
 		supportDashboard,

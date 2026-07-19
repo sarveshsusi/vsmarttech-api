@@ -1,9 +1,9 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -130,18 +130,17 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		c.GetHeader("User-Agent"),
 	)
 	// 🔐 2FA required
-	if err != nil && strings.HasPrefix(err.Error(), "TWO_FA_REQUIRED:") {
-		token := strings.TrimPrefix(err.Error(), "TWO_FA_REQUIRED:")
-
+	var twoFA *service.ErrTwoFARequired
+	if err != nil && errors.As(err, &twoFA) {
 		c.JSON(http.StatusOK, gin.H{
 			"two_fa_required": true,
-			"two_fa_token":    token,
+			"two_fa_token":    twoFA.TempToken,
 		})
 		return
 	}
 
 	// 🔒 Password reset required
-	if err != nil && err.Error() == "PASSWORD_RESET_REQUIRED" {
+	if err != nil && errors.Is(err, service.ErrPasswordResetRequired) {
 		c.JSON(http.StatusForbidden, gin.H{
 			"error": "password_reset_required",
 		})

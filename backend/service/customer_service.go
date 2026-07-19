@@ -5,9 +5,9 @@ import (
 
 	"rbac/models"
 	"rbac/repository"
+	"rbac/utils"
 
 	"github.com/google/uuid"
-	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
@@ -54,10 +54,7 @@ func (s *CustomerService) CreateCustomer(
 	return s.db.Transaction(func(tx *gorm.DB) error {
 
 		// 1️⃣ Hash password
-		hash, err := bcrypt.GenerateFromPassword(
-			[]byte(password),
-			bcrypt.DefaultCost,
-		)
+		hash, err := utils.HashPassword(password)
 		if err != nil {
 			return err
 		}

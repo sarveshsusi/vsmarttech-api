@@ -2,6 +2,8 @@ package main
 
 import (
 	"log"
+	"log/slog"
+	"os"
 
 	"github.com/joho/godotenv"
 
@@ -19,6 +21,12 @@ func main() {
 	})
 	if err != nil {
 		log.Fatalf("bootstrap failed: %v", err)
+	}
+
+	if app.Config.Server.Env == "production" {
+		slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	} else {
+		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})))
 	}
 
 	log.Printf("API listening on :%s [%s] (in-process crons=%v)",

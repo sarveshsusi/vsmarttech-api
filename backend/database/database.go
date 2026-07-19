@@ -14,7 +14,7 @@ var DB *gorm.DB
 
 func Init(cfg *config.Config) error {
 	if cfg.Database.URL == "" {
-		return errors.New("DATABASE_URL is required for Supabase")
+		return errors.New("DATABASE_URL is required")
 	}
 
 	db, err := gorm.Open(postgres.Open(cfg.Database.URL), &gorm.Config{

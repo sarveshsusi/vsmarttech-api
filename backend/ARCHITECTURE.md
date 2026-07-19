@@ -3,40 +3,44 @@
 ## Current shape: modular monolith + workers
 
 ```
-Client → Nginx:8081 (gateway) → api:8080 → Postgres (single DB)
-                              ↘ worker-sla
-                              ↘ worker-contracts
+Client (Vercel SPA) → Nginx:8081 (gateway) → api:8080 → Postgres (single DB)
+                                            ↘ worker-sla
+                                            ↘ worker-contracts
 ```
 
-- **One public URL** (`/api/v1/...`). The frontend must not talk to multiple origins.
-- **One Postgres database** shared by API and workers.
-- Domain packages under `internal/modules/{auth,crm,tickets,amc,notify}` own route registration.
-- Process entrypoints: `cmd/api`, `cmd/worker-sla`, `cmd/worker-contracts`.
+- **One public URL** (`/api/v1/...`). Frontend must not use multiple API origins.
+- **One Postgres** shared by API and workers (DB-per-service deferred).
+- Domain packages: `internal/modules/{auth,crm,tickets,amc,notify}`.
+- Wiring: `internal/bootstrap`. Entrypoints: `cmd/api`, `cmd/worker-sla`, `cmd/worker-contracts`.
+- Observability: `X-Request-ID`, structured `slog` access logs, audit rows in `audit_logs`, `/healthz` + `/readyz`.
 
-## Explicitly deferred (do not do yet)
+## Explicitly deferred
 
-| Decision | Status | Why |
-|---|---|---|
-| DB-per-service | **Deferred** | Tickets/AMC/CRM join users & companies; splitting DBs needs events/saga work with little payoff on one host |
-| Kubernetes | **Deferred** | Compose/NAS is enough until multi-host scale or multi-team ownership appears |
-| Full HTTP microservice split | **Deferred** | Extract workers first; keep API as one binary until a concrete scale/team driver |
+| Decision | Status |
+|---|---|
+| DB-per-service | Deferred |
+| Kubernetes | Deferred |
+| Full HTTP microservice split | Deferred |
 
-## When to reconsider a service extract
+## Migrations
 
-Only after:
+| Mechanism | Role |
+|---|---|
+| `database.Migrate` (GORM AutoMigrate) | Source of truth at API boot |
+| `migrations/*.sql` | Manual/reference only; keep in sync with models; no empty files |
+| `schema.sql` | Snapshot reference |
 
-1. CI + auth/ticket tests are green
-2. Secrets are not in git
-3. Workers have been stable in Compose
-4. There is a real reason (independent scale, separate team ownership, or deploy isolation that workers do not solve)
-
-First API extract candidates (still **one Postgres**): `auth-identity`, then `tickets`.
+Before changing schema in production: migrate staging first, confirm AutoMigrate is safe for the change, then deploy API (workers do not migrate).
 
 ## Local vs Compose crons
 
-| Mode | `RUN_INPROCESS_CRONS` | Who runs SLA / contract jobs |
+| Mode | `RUN_INPROCESS_CRONS` | Jobs |
 |---|---|---|
-| `go run ./cmd/api` (dev default) | `true` (default) | Inside API process |
-| Docker Compose (this repo) | `false` | `worker-sla` + `worker-contracts` |
+| `go run ./cmd/api` | `true` (default) | Inside API |
+| Docker Compose | `false` | `worker-sla` + `worker-contracts` |
 
-Never run both in-process crons and worker containers against the same DB.
+Never run both against the same DB.
+
+## Deploy notes (AWS later)
+
+Keep Compose topology: ALB/Nginx → API; workers as separate tasks/containers; RDS for Postgres; S3 for uploads; set `FRONTEND_URL` to the Vercel URL.

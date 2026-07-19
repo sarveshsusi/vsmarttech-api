@@ -1,0 +1,97 @@
+openapi: 3.0.3
+info:
+  title: VSmart Tech API
+  version: 1.0.0
+  description: Modular monolith CRM API. Public entry via Nginx; workers are not HTTP.
+servers:
+  - url: http://localhost:8081
+    description: Docker Compose (Nginx)
+paths:
+  /healthz:
+    get:
+      summary: Liveness
+      responses:
+        "200":
+          description: OK
+  /readyz:
+    get:
+      summary: Readiness (DB ping)
+      responses:
+        "200":
+          description: Ready
+        "503":
+          description: Not ready
+  /api/v1/auth/login:
+    post:
+      summary: Login (may return two_fa_required)
+      tags: [auth]
+      responses:
+        "200":
+          description: Tokens or 2FA challenge
+  /api/v1/auth/refresh:
+    post:
+      summary: Refresh access token (cookie or body)
+      tags: [auth]
+      responses:
+        "200":
+          description: New access token
+  /api/v1/profile:
+    get:
+      summary: Current user profile
+      tags: [auth]
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Profile
+  /api/v1/admin/tickets:
+    get:
+      summary: Admin list tickets
+      tags: [tickets]
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Ticket list
+  /api/v1/support/tickets:
+    get:
+      summary: Support engineer tickets
+      tags: [tickets]
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Ticket list
+  /api/v1/customer/tickets:
+    get:
+      summary: Customer tickets
+      tags: [tickets]
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Ticket list
+  /api/v1/notifications:
+    get:
+      summary: List notifications
+      tags: [notify]
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Notifications
+  /api/v1/admin/amc-assignments:
+    get:
+      summary: List AMC assignments
+      tags: [amc]
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: AMC list
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+tags:
+  - name: auth
+  - name: tickets
+  - name: amc
+  - name: notify
+  - name: crm

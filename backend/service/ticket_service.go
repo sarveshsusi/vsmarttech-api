@@ -2,12 +2,14 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"rbac/domain"
 	"rbac/models"
 	"rbac/repository"
 )
@@ -19,6 +21,13 @@ type TicketService struct {
 	customerSolutionRepo *repository.CustomerSolutionRepository
 	notificationService  *NotificationService
 	escalationRepo       *repository.TicketEscalationRepository
+}
+
+func assertTicketTransition(from, to models.TicketStatus) error {
+	if !domain.CanTransition(from, to) {
+		return fmt.Errorf("invalid status transition from %s to %s", from, to)
+	}
+	return nil
 }
 
 func NewTicketService(
@@ -171,8 +180,8 @@ func (s *TicketService) AssignTicket(
 			return err
 		}
 
-		if ticket.Status != models.StatusOpen {
-			return errors.New("only OPEN tickets can be assigned")
+		if err := assertTicketTransition(ticket.Status, models.StatusAssigned); err != nil {
+			return err
 		}
 
 		ok, err := repo.SupportEngineerExists(engineerID)
@@ -253,9 +262,9 @@ func (s *TicketService) StartTicket(
 		return errors.New("you are not assigned to this ticket")
 	}
 
-	if ticket.Status != models.StatusAssigned {
-		log.Printf("[START_TICKET_ERROR] Ticket status is %s, not Assigned", ticket.Status)
-		return errors.New("ticket must be ASSIGNED before starting")
+	if err := assertTicketTransition(ticket.Status, models.StatusInProgress); err != nil {
+		log.Printf("[START_TICKET_ERROR] %v", err)
+		return err
 	}
 
 	now := time.Now()
@@ -340,9 +349,9 @@ func (s *TicketService) CloseTicket(
 		return errors.New("you are not assigned to this ticket")
 	}
 
-	if ticket.Status != models.StatusInProgress {
-		log.Printf("[CLOSE_TICKET_ERROR] Ticket status is %s, not In Progress", ticket.Status)
-		return errors.New("only IN_PROGRESS tickets can be closed")
+	if err := assertTicketTransition(ticket.Status, models.StatusClosed); err != nil {
+		log.Printf("[CLOSE_TICKET_ERROR] %v", err)
+		return err
 	}
 
 	now := time.Now()
@@ -417,9 +426,9 @@ func (s *TicketService) AdminCloseTicket(
 
 	log.Printf("[ADMIN_CLOSE_TICKET] Current status: %s", ticket.Status)
 
-	if ticket.Status == models.StatusClosed {
-		log.Printf("[ADMIN_CLOSE_TICKET_ERROR] Ticket is already closed")
-		return errors.New("ticket is already closed")
+	if err := assertTicketTransition(ticket.Status, models.StatusClosed); err != nil {
+		log.Printf("[ADMIN_CLOSE_TICKET_ERROR] %v", err)
+		return err
 	}
 
 	now := time.Now()
@@ -573,9 +582,9 @@ func (s *TicketService) AdminAssignTicket(
 
 		log.Printf("[ADMIN_ASSIGN_TICKET] Current status: %s", ticket.Status)
 
-		if ticket.Status != models.StatusOpen {
-			log.Printf("[ADMIN_ASSIGN_TICKET_ERROR] Ticket status is %s, not Open", ticket.Status)
-			return errors.New("only OPEN tickets can be assigned")
+		if err := assertTicketTransition(ticket.Status, models.StatusAssigned); err != nil {
+			log.Printf("[ADMIN_ASSIGN_TICKET_ERROR] %v", err)
+			return err
 		}
 
 		cs, err := s.customerSolutionRepo.GetByID(customerSolutionID)
