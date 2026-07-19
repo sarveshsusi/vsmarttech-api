@@ -1,0 +1,41 @@
+name: Deploy Backend
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to Lightsail
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            set -e
+
+            cd ~/app/backend
+
+            echo "Pulling latest code..."
+            git fetch origin
+            git reset --hard origin/main
+
+            echo "Building containers..."
+            docker compose build
+
+            echo "Starting updated services..."
+            docker compose up -d --remove-orphans
+
+            echo "Cleaning unused images..."
+            docker image prune -f
+
+            echo "Verifying health..."
+            curl -fsS --max-time 15 http://127.0.0.1:8081/healthz
+            curl -fsS --max-time 15 http://127.0.0.1:8081/readyz
+
+            echo "Deployment completed."
