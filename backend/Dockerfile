@@ -3,6 +3,9 @@
 # ================================
 FROM golang:1.25-alpine AS builder
 
+# Pull patched toolchain matching go.mod (fixes stdlib vulns flagged by govulncheck)
+ENV GOTOOLCHAIN=go1.25.12
+
 RUN apk add --no-cache git
 
 WORKDIR /build

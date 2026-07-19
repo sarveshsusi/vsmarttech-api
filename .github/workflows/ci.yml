@@ -18,7 +18,8 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version-file: backend/go.mod
+          # Pin a patched toolchain (go.mod is 1.25.12+); avoids stdlib vulns on bare 1.25.0
+          go-version: "1.25.12"
           cache-dependency-path: backend/go.sum
 
       - name: Download modules
