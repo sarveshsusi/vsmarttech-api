@@ -1,6 +1,6 @@
 # VSmart Tech API (backend)
 
-Go/Gin CRM API: tickets, AMC, contracts, RBAC, 2FA.
+Go/Gin CRM API: tickets, AMC, contracts, RBAC, 2FA,Seecured Platform
 
 **Architecture:** modular monolith (one HTTP API) + optional worker containers. **Not** full microservices. Frontend (e.g. Vercel) talks to a **single** public API URL.
 
