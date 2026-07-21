@@ -49,6 +49,8 @@ func RegisterAdmin(admin *gin.RouterGroup, h Handlers) {
 func RegisterSupport(support *gin.RouterGroup, h Handlers) {
 	support.GET("/dashboard", h.SupportDashboard.GetStats)
 	support.GET("/tickets", h.SupportEngineer.GetMyTickets)
+	// Peer list for co-engineer selection on field visits (active only)
+	support.GET("/engineers", h.SupportEngineer.GetAllActive)
 }
 
 // RegisterCustomer mounts customer dashboard + solutions routes.

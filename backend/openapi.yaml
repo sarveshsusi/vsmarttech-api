@@ -51,6 +51,14 @@ paths:
       responses:
         "200":
           description: Ticket list
+  /api/v1/support/engineers:
+    get:
+      summary: List active support engineers (for co-engineer selection on visits)
+      tags: [tickets]
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Active support engineer list
   /api/v1/support/tickets:
     get:
       summary: Support engineer tickets
