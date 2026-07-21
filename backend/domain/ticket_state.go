@@ -15,7 +15,8 @@ var ValidTransitions = map[models.TicketStatus][]models.TicketStatus{
 		models.StatusClosed,
 	},
 	models.StatusClosed: {
-		models.StatusOpen, // admin reopen
+		models.StatusAssigned, // admin reopen — keep engineer + PO
+		models.StatusOpen,     // admin reopen when no engineer was assigned
 	},
 }
 

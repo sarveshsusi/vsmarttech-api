@@ -14,8 +14,14 @@ func TestAssertTicketTransition(t *testing.T) {
 	if err := assertTicketTransition(models.StatusOpen, models.StatusInProgress); err == nil {
 		t.Fatal("open->in progress should fail")
 	}
-	if err := assertTicketTransition(models.StatusClosed, models.StatusOpen); err == nil {
-		t.Fatal("closed->open should fail")
+	if err := assertTicketTransition(models.StatusClosed, models.StatusAssigned); err != nil {
+		t.Fatalf("closed->assigned: %v", err)
+	}
+	if err := assertTicketTransition(models.StatusClosed, models.StatusOpen); err != nil {
+		t.Fatalf("closed->open: %v", err)
+	}
+	if err := assertTicketTransition(models.StatusClosed, models.StatusInProgress); err == nil {
+		t.Fatal("closed->in progress should fail")
 	}
 }
 

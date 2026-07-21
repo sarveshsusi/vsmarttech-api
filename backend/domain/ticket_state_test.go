@@ -20,8 +20,9 @@ func TestCanTransition(t *testing.T) {
 		{"assigned to closed", models.StatusAssigned, models.StatusClosed, true},
 		{"in progress to closed", models.StatusInProgress, models.StatusClosed, true},
 		{"in progress to open", models.StatusInProgress, models.StatusOpen, false},
-		{"closed is terminal", models.StatusClosed, models.StatusOpen, false},
-		{"closed to assigned", models.StatusClosed, models.StatusAssigned, false},
+		{"closed to open", models.StatusClosed, models.StatusOpen, true},
+		{"closed to assigned", models.StatusClosed, models.StatusAssigned, true},
+		{"closed to in progress", models.StatusClosed, models.StatusInProgress, false},
 	}
 
 	for _, tt := range tests {

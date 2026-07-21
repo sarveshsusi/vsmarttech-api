@@ -1146,7 +1146,14 @@ func (s *TicketService) ReopenTicket(
 		return nil, errors.New("ticket not found")
 	}
 
-	if err := assertTicketTransition(ticket.Status, models.StatusOpen); err != nil {
+	// Prefer Assigned when an engineer is still on the ticket so reopen does
+	// not force a full reassignment (PO / company / engineer form).
+	newStatus := models.StatusOpen
+	if ticket.EngineerID != nil {
+		newStatus = models.StatusAssigned
+	}
+
+	if err := assertTicketTransition(ticket.Status, newStatus); err != nil {
 		return nil, err
 	}
 
@@ -1159,14 +1166,11 @@ func (s *TicketService) ReopenTicket(
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		repo := repository.NewTicketRepository(tx)
 
+		// Keep engineer_id and customer_solution_id — only clear closed state.
 		if err := repo.UpdateFields(ticketID, map[string]interface{}{
-			"status":               models.StatusOpen,
-			"engineer_id":          nil,
-			"customer_solution_id": nil,
-			"closed_at":            nil,
-			"support_comment":      nil,
-			"closure_proof_image":  nil,
-			"updated_at":           now,
+			"status":    newStatus,
+			"closed_at": nil,
+			"updated_at": now,
 		}); err != nil {
 			return err
 		}
@@ -1174,7 +1178,7 @@ func (s *TicketService) ReopenTicket(
 		if err := repo.CreateStatusHistory(&models.TicketStatusHistory{
 			TicketID:  ticketID,
 			OldStatus: string(models.StatusClosed),
-			NewStatus: string(models.StatusOpen),
+			NewStatus: string(newStatus),
 			ChangedBy: adminID,
 			ChangedAt: now,
 		}); err != nil {
@@ -1186,8 +1190,9 @@ func (s *TicketService) ReopenTicket(
 			EventType:      models.TicketEventReopened,
 			ActorUserID:    adminID,
 			FromStatus:     statusPtr(models.StatusClosed),
-			ToStatus:       statusPtr(models.StatusOpen),
+			ToStatus:       statusPtr(newStatus),
 			FromEngineerID: fromEng,
+			ToEngineerID:   fromEng,
 			Note:           note,
 			CreatedAt:      now,
 		})
