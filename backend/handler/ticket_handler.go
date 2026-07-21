@@ -493,14 +493,57 @@ func (h *TicketHandler) CreateSupportTicketVisit(c *gin.Context) {
 
 func (h *TicketHandler) ListAdminTicketVisits(c *gin.Context) {
 	ticketID := c.Query("ticket_id")
-	if ticketID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "ticket_id is required"})
+	if ticketID != "" {
+		visits, err := h.service.ListFieldVisits(ticketID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, visits)
 		return
 	}
 
-	visits, err := h.service.ListFieldVisits(ticketID)
+	var engineerID *uuid.UUID
+	var companyID *uuid.UUID
+	var startDate *time.Time
+	var endDate *time.Time
+
+	if v := c.Query("engineer_id"); v != "" {
+		id, err := uuid.Parse(v)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid engineer_id"})
+			return
+		}
+		engineerID = &id
+	}
+	if v := c.Query("company_id"); v != "" {
+		id, err := uuid.Parse(v)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid company_id"})
+			return
+		}
+		companyID = &id
+	}
+	if v := c.Query("start_date"); v != "" {
+		d, err := time.Parse("2006-01-02", v)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "start_date must be YYYY-MM-DD"})
+			return
+		}
+		startDate = &d
+	}
+	if v := c.Query("end_date"); v != "" {
+		d, err := time.Parse("2006-01-02", v)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "end_date must be YYYY-MM-DD"})
+			return
+		}
+		endDate = &d
+	}
+
+	visits, err := h.service.ListAllFieldVisits(engineerID, companyID, startDate, endDate)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load field visits"})
 		return
 	}
 	c.JSON(http.StatusOK, visits)

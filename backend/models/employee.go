@@ -46,6 +46,7 @@ type ServiceVisit struct {
 	Engineer    *SupportEngineer    `json:"logged_by,omitempty" gorm:"foreignKey:EngineerID"`
 	CoEngineers []SupportEngineer   `json:"co_engineers,omitempty" gorm:"many2many:service_visit_co_engineers;"`
 	Proofs      []ServiceVisitProof `json:"proofs,omitempty" gorm:"foreignKey:ServiceVisitID"`
+	Ticket      *Ticket             `json:"ticket,omitempty" gorm:"foreignKey:TicketID;references:ID"`
 }
 
 func (ServiceVisit) TableName() string {

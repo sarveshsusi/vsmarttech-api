@@ -98,3 +98,38 @@ func (r *ServiceVisitRepository) CountByTicketIDs(ticketIDs []string) (map[strin
 	}
 	return result, nil
 }
+
+type ListAllVisitsFilter struct {
+	EngineerID *uuid.UUID
+	CompanyID  *uuid.UUID
+	StartDate  *time.Time
+	EndDate    *time.Time
+}
+
+func (r *ServiceVisitRepository) ListAll(filter ListAllVisitsFilter) ([]models.ServiceVisit, error) {
+	q := r.db.Model(&models.ServiceVisit{}).
+		Preload("Engineer.User").
+		Preload("CoEngineers.User").
+		Preload("Proofs").
+		Preload("Ticket.Customer.Company").
+		Preload("Ticket.SupportEngineer.User")
+
+	if filter.EngineerID != nil {
+		q = q.Where("engineer_id = ?", *filter.EngineerID)
+	}
+	if filter.StartDate != nil {
+		q = q.Where("visit_date >= ?", filter.StartDate.Format("2006-01-02"))
+	}
+	if filter.EndDate != nil {
+		q = q.Where("visit_date <= ?", filter.EndDate.Format("2006-01-02"))
+	}
+	if filter.CompanyID != nil {
+		q = q.Joins("JOIN tickets ON tickets.id = service_visits.ticket_id").
+			Joins("JOIN customers ON customers.id = tickets.customer_id").
+			Where("customers.company_id = ?", *filter.CompanyID)
+	}
+
+	var visits []models.ServiceVisit
+	err := q.Order("visit_date desc, created_at desc").Find(&visits).Error
+	return visits, err
+}

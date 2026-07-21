@@ -831,6 +831,20 @@ func (s *TicketService) ListFieldVisits(ticketID string) ([]models.ServiceVisit,
 	return s.visitRepo.ListByTicketID(ticketID)
 }
 
+func (s *TicketService) ListAllFieldVisits(
+	engineerID *uuid.UUID,
+	companyID *uuid.UUID,
+	startDate *time.Time,
+	endDate *time.Time,
+) ([]models.ServiceVisit, error) {
+	return s.visitRepo.ListAll(repository.ListAllVisitsFilter{
+		EngineerID: engineerID,
+		CompanyID:  companyID,
+		StartDate:  startDate,
+		EndDate:    endDate,
+	})
+}
+
 func (s *TicketService) ListFieldVisitsForAssignedEngineer(
 	ticketID string,
 	userID uuid.UUID,
