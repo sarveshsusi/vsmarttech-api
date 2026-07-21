@@ -3,6 +3,7 @@ package handler
 import (
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -35,8 +36,10 @@ func NewTicketHandler(
 ========================= */
 
 type CustomerCreateTicketRequest struct {
-	Title       string `json:"title" binding:"required"`
-	Description string `json:"description" binding:"required"`
+	Title              string      `json:"title" binding:"required"`
+	Description        string      `json:"description" binding:"required"`
+	CustomerSolutionID *uuid.UUID  `json:"customer_solution_id"`
+	AttachmentURLs     []string    `json:"attachment_urls"`
 }
 
 type AdminAssignTicketRequest struct {
@@ -62,10 +65,12 @@ func (h *TicketHandler) CreateTicket(c *gin.Context) {
 		userID,
 		req.Title,
 		req.Description,
+		req.CustomerSolutionID,
+		req.AttachmentURLs,
 	)
 	if err != nil {
 		log.Printf("[CREATE_TICKET_ERROR] userID=%s error=%v", userID, err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to create ticket"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -642,4 +647,92 @@ func (h *TicketHandler) ListTicketEvents(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, events)
+}
+
+func (h *TicketHandler) ListRecentTicketEvents(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "25"))
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 25
+	}
+
+	filter := repository.RecentEventsFilter{
+		EventType: c.Query("event_type"),
+		Search:    c.Query("search"),
+		StartDate: c.Query("start_date"),
+		EndDate:   c.Query("end_date"),
+		Limit:     pageSize,
+		Offset:    (page - 1) * pageSize,
+	}
+
+	events, total, err := h.service.ListRecentTicketEvents(filter)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load activity"})
+		return
+	}
+	if events == nil {
+		events = []models.TicketEvent{}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"data":      events,
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
+	})
+}
+
+/* =========================
+   TICKET COMMENTS
+========================= */
+
+type AddTicketCommentRequest struct {
+	TicketID   string `json:"ticket_id" binding:"required"`
+	Comment    string `json:"comment" binding:"required"`
+	IsInternal bool   `json:"is_internal"`
+}
+
+func (h *TicketHandler) ListTicketComments(c *gin.Context) {
+	ticketID := c.Query("ticket_id")
+	if ticketID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ticket_id is required"})
+		return
+	}
+
+	role := c.MustGet("user_role").(models.Role)
+	comments, err := h.service.ListTicketComments(ticketID, role)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if comments == nil {
+		comments = []models.TicketComment{}
+	}
+	c.JSON(http.StatusOK, comments)
+}
+
+func (h *TicketHandler) AddTicketComment(c *gin.Context) {
+	var req AddTicketCommentRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ticket_id and comment are required"})
+		return
+	}
+
+	userID := c.MustGet("user_id").(uuid.UUID)
+	role := c.MustGet("user_role").(models.Role)
+
+	comment, err := h.service.AddTicketComment(
+		req.TicketID,
+		userID,
+		role,
+		req.Comment,
+		req.IsInternal,
+	)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, comment)
 }

@@ -27,7 +27,10 @@ func RegisterAdmin(admin *gin.RouterGroup, h Handlers) {
 	admin.POST("/tickets/reopen", h.Ticket.ReopenTicket)
 	admin.GET("/tickets/status", h.Ticket.ListTicketStatus)
 	admin.GET("/tickets/events", h.Ticket.ListTicketEvents)
+	admin.GET("/tickets/activity", h.Ticket.ListRecentTicketEvents)
 	admin.GET("/tickets/visits", h.Ticket.ListAdminTicketVisits)
+	admin.GET("/tickets/comments", h.Ticket.ListTicketComments)
+	admin.POST("/tickets/comments", h.Ticket.AddTicketComment)
 }
 
 // RegisterSupport mounts support ticket lifecycle routes.
@@ -36,6 +39,8 @@ func RegisterSupport(support *gin.RouterGroup, h Handlers) {
 	support.POST("/tickets/close", h.Ticket.CloseTicket)
 	support.GET("/tickets/visits", h.Ticket.ListSupportTicketVisits)
 	support.POST("/tickets/visits", h.Ticket.CreateSupportTicketVisit)
+	support.GET("/tickets/comments", h.Ticket.ListTicketComments)
+	support.POST("/tickets/comments", h.Ticket.AddTicketComment)
 }
 
 // RegisterCustomer mounts customer ticket + feedback routes.

@@ -4,14 +4,14 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
-
+	"math/big"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"math/big"
 	"rbac/config"
 	"rbac/models"
 	"rbac/repository"
@@ -374,6 +374,24 @@ func (s *AuthService) ChangePassword(
 
 func (s *AuthService) GetUserByID(id uuid.UUID) (*models.User, error) {
 	return s.repo.FindUserByID(id)
+}
+
+func (s *AuthService) UpdateProfile(userID uuid.UUID, name string) (*models.User, error) {
+	trimmed := strings.TrimSpace(name)
+	if len(trimmed) < 2 {
+		return nil, errors.New("name must be at least 2 characters")
+	}
+	if len(trimmed) > 120 {
+		return nil, errors.New("name must be at most 120 characters")
+	}
+
+	if err := s.db.Model(&models.User{}).
+		Where("id = ?", userID).
+		Update("name", trimmed).Error; err != nil {
+		return nil, errors.New("failed to update profile")
+	}
+
+	return s.repo.FindUserByID(userID)
 }
 
 func (s *AuthService) CreatePasswordReset(

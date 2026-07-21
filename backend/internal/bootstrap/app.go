@@ -149,6 +149,7 @@ func wireHTTP(
 	notificationHandler := handler.NewNotificationHandler(notificationService)
 	contractHandler := handler.NewContractHandler(app.ContractExpiryService)
 	amcHandler := handler.NewAMCAssignmentHandler(amcService, imageUploader, supportEngineerRepo)
+	auditHandler := handler.NewAuditHandler(repository.NewAuditRepository(db))
 
 	r := gin.New()
 	r.Use(middleware.RequestIDMiddleware())
@@ -189,6 +190,7 @@ func wireHTTP(
 		notificationHandler,
 		contractHandler,
 		amcHandler,
+		auditHandler,
 	)
 	app.Engine = r
 	return nil

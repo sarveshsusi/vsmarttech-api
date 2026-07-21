@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -147,6 +148,8 @@ func (s *TicketService) CustomerCreateTicket(
 	userID uuid.UUID,
 	title string,
 	description string,
+	customerSolutionID *uuid.UUID,
+	attachmentURLs []string,
 ) (*models.Ticket, error) {
 
 	customer, err := s.customerRepo.GetByUserID(userID)
@@ -156,6 +159,18 @@ func (s *TicketService) CustomerCreateTicket(
 	}
 
 	log.Printf("[CUSTOMER_CREATE_TICKET] customerID=%s found for userID=%s", customer.ID, userID)
+
+	var linkedSolution *models.CustomerSolution
+	if customerSolutionID != nil && *customerSolutionID != uuid.Nil {
+		cs, err := s.customerSolutionRepo.GetByID(*customerSolutionID)
+		if err != nil {
+			return nil, errors.New("selected solution / PO not found")
+		}
+		if cs.CustomerID != customer.ID {
+			return nil, errors.New("selected solution does not belong to your account")
+		}
+		linkedSolution = cs
+	}
 
 	now := time.Now()
 
@@ -176,12 +191,30 @@ func (s *TicketService) CustomerCreateTicket(
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
+	if linkedSolution != nil {
+		ticket.CustomerSolutionID = &linkedSolution.ID
+	}
 
 	log.Printf("[CUSTOMER_CREATE_TICKET] inserting ticket with customerID=%s", customer.ID)
 
 	if err := s.ticketRepo.Create(ticket); err != nil {
 		log.Printf("[CUSTOMER_CREATE_TICKET_ERROR] insert failed customerID=%s error=%v", customer.ID, err)
 		return nil, err
+	}
+
+	for _, rawURL := range attachmentURLs {
+		url := strings.TrimSpace(rawURL)
+		if url == "" {
+			continue
+		}
+		_ = s.ticketRepo.CreateAttachment(&models.TicketAttachment{
+			TicketID:   ticket.ID,
+			FileURL:    url,
+			FileName:   "attachment",
+			FileType:   "image",
+			UploadedBy: userID,
+			CreatedAt:  now,
+		})
 	}
 
 	s.logTicketEvent(&models.TicketEvent{
@@ -1313,4 +1346,59 @@ func (s *TicketService) ListTicketEvents(ticketID string) ([]models.TicketEvent,
 		return nil, errors.New("ticket not found")
 	}
 	return s.ticketRepo.ListEventsByTicketID(ticketID)
+}
+
+func (s *TicketService) ListRecentTicketEvents(filter repository.RecentEventsFilter) ([]models.TicketEvent, int64, error) {
+	return s.ticketRepo.ListRecentEvents(filter)
+}
+
+/* =========================
+   TICKET COMMENTS / NOTES
+========================= */
+
+func (s *TicketService) ListTicketComments(ticketID string, role models.Role) ([]models.TicketComment, error) {
+	if _, err := s.ticketRepo.GetByID(ticketID); err != nil {
+		return nil, errors.New("ticket not found")
+	}
+	includeInternal := role == models.RoleAdmin || role == models.RoleSupport
+	return s.ticketRepo.ListComments(ticketID, includeInternal)
+}
+
+func (s *TicketService) AddTicketComment(
+	ticketID string,
+	userID uuid.UUID,
+	role models.Role,
+	body string,
+	isInternal bool,
+) (*models.TicketComment, error) {
+	trimmed := strings.TrimSpace(body)
+	if trimmed == "" {
+		return nil, errors.New("comment is required")
+	}
+	if len(trimmed) > 4000 {
+		return nil, errors.New("comment is too long")
+	}
+
+	if _, err := s.ticketRepo.GetByID(ticketID); err != nil {
+		return nil, errors.New("ticket not found")
+	}
+
+	if isInternal && role != models.RoleAdmin && role != models.RoleSupport {
+		return nil, errors.New("not allowed to post internal notes")
+	}
+	if role == models.RoleCustomer {
+		isInternal = false
+	}
+
+	comment := &models.TicketComment{
+		TicketID:   ticketID,
+		UserID:     userID,
+		Comment:    trimmed,
+		IsInternal: isInternal,
+		CreatedAt:  time.Now(),
+	}
+	if err := s.ticketRepo.CreateComment(comment); err != nil {
+		return nil, err
+	}
+	return s.ticketRepo.GetCommentByID(comment.ID)
 }

@@ -42,6 +42,7 @@ func SetupRoutes(
 	notificationHandler *handler.NotificationHandler,
 	contractHandler *handler.ContractHandler,
 	amcHandler *handler.AMCAssignmentHandler,
+	auditHandler *handler.AuditHandler,
 ) {
 	// Security middleware is applied once in bootstrap (CORS + headers + audit).
 
@@ -112,6 +113,7 @@ func SetupRoutes(
 			modcrm.RegisterAdmin(admin, crmHandlers)
 			modamc.RegisterAdmin(admin, amcHandlers)
 			modtickets.RegisterAdmin(admin, ticketHandlers)
+			admin.GET("/audit-logs", auditHandler.List)
 		}
 
 		support := protected.Group("/support")

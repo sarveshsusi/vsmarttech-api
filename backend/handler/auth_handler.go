@@ -75,6 +75,10 @@ type ChangePasswordRequest struct {
 	NewPassword string `json:"new_password" binding:"required,min=8"`
 }
 
+type UpdateProfileRequest struct {
+	Name string `json:"name" binding:"required,min=2,max=120"`
+}
+
 /* =====================
    Cookie Helpers
 ===================== */
@@ -275,12 +279,35 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		c.GetHeader("User-Agent"),
 	)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	h.clearRefreshCookie(c)
 	c.JSON(http.StatusOK, gin.H{"message": "password changed, login again"})
+}
+
+// Update own profile (name)
+func (h *AuthHandler) UpdateProfile(c *gin.Context) {
+	var req UpdateProfileRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name is required (2–120 characters)"})
+		return
+	}
+
+	userID := c.MustGet("user_id").(uuid.UUID)
+	user, err := h.service.UpdateProfile(userID, req.Name)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"id":    user.ID,
+		"name":  user.Name,
+		"email": user.Email,
+		"role":  user.Role,
+	})
 }
 
 // Get current user

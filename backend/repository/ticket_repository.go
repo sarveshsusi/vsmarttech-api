@@ -242,6 +242,59 @@ func (r *TicketRepository) ListEventsByTicketID(ticketID string) ([]models.Ticke
 	return events, err
 }
 
+type RecentEventsFilter struct {
+	EventType string
+	Search    string
+	StartDate string
+	EndDate   string
+	Limit     int
+	Offset    int
+}
+
+func (r *TicketRepository) ListRecentEvents(filter RecentEventsFilter) ([]models.TicketEvent, int64, error) {
+	q := r.db.Model(&models.TicketEvent{})
+	if filter.EventType != "" {
+		q = q.Where("event_type = ?", filter.EventType)
+	}
+	if filter.Search != "" {
+		like := "%" + filter.Search + "%"
+		q = q.Where("ticket_id ILIKE ? OR note ILIKE ?", like, like)
+	}
+	if filter.StartDate != "" {
+		q = q.Where("created_at >= ?", filter.StartDate+" 00:00:00")
+	}
+	if filter.EndDate != "" {
+		q = q.Where("created_at <= ?", filter.EndDate+" 23:59:59")
+	}
+
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	limit := filter.Limit
+	if limit <= 0 || limit > 100 {
+		limit = 25
+	}
+	offset := filter.Offset
+	if offset < 0 {
+		offset = 0
+	}
+
+	var events []models.TicketEvent
+	err := q.
+		Preload("Actor").
+		Preload("FromEngineer").
+		Preload("FromEngineer.User").
+		Preload("ToEngineer").
+		Preload("ToEngineer.User").
+		Order("created_at DESC").
+		Limit(limit).
+		Offset(offset).
+		Find(&events).Error
+	return events, total, err
+}
+
 type TicketStatusListFilter struct {
 	Status     string
 	CompanyID  *uuid.UUID
@@ -334,4 +387,38 @@ func (r *TicketRepository) CountReopensByTicketIDs(ticketIDs []string) (map[stri
 		result[r.TicketID] = r.Count
 	}
 	return result, nil
+}
+
+/* ======================
+   TICKET COMMENTS
+====================== */
+
+func (r *TicketRepository) ListComments(ticketID string, includeInternal bool) ([]models.TicketComment, error) {
+	q := r.db.Where("ticket_id = ?", ticketID).
+		Preload("User").
+		Order("created_at ASC")
+	if !includeInternal {
+		q = q.Where("is_internal = ?", false)
+	}
+	var comments []models.TicketComment
+	if err := q.Find(&comments).Error; err != nil {
+		return nil, err
+	}
+	return comments, nil
+}
+
+func (r *TicketRepository) CreateComment(comment *models.TicketComment) error {
+	return r.db.Create(comment).Error
+}
+
+func (r *TicketRepository) CreateAttachment(att *models.TicketAttachment) error {
+	return r.db.Create(att).Error
+}
+
+func (r *TicketRepository) GetCommentByID(id uuid.UUID) (*models.TicketComment, error) {
+	var comment models.TicketComment
+	if err := r.db.Preload("User").First(&comment, "id = ?", id).Error; err != nil {
+		return nil, err
+	}
+	return &comment, nil
 }

@@ -168,6 +168,7 @@ type TicketComment struct {
 	ID         uuid.UUID `json:"id" gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
 	TicketID   string    `json:"ticket_id" gorm:"type:varchar(20);index"`
 	UserID     uuid.UUID `json:"user_id" gorm:"type:uuid"`
+	User       *User     `json:"user,omitempty" gorm:"foreignKey:UserID"`
 	Comment    string    `json:"comment" gorm:"type:text"`
 	IsInternal bool      `json:"is_internal"`
 	CreatedAt  time.Time `json:"created_at"`
