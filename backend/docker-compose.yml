@@ -19,8 +19,7 @@ services:
   # HTTP API (modular monolith)
   # ================================
   api:
-    build: .
-    image: vsmart-backend:latest
+    image: ghcr.io/sarveshsusi/vsmart-backend:latest
     container_name: vsmart-api
     restart: unless-stopped
     <<: *app-security
@@ -53,8 +52,7 @@ services:
   # Background workers
   # ================================
   worker-sla:
-    build: .
-    image: vsmart-backend:latest
+    image: ghcr.io/sarveshsusi/vsmart-backend:latest
     container_name: vsmart-worker-sla
     restart: unless-stopped
     <<: *app-security
@@ -85,8 +83,7 @@ services:
     logging: *default-logging
 
   worker-contracts:
-    build: .
-    image: vsmart-backend:latest
+    image: ghcr.io/sarveshsusi/vsmart-backend:latest
     container_name: vsmart-worker-contracts
     restart: unless-stopped
     <<: *app-security
