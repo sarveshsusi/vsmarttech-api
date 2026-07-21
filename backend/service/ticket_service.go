@@ -31,6 +31,40 @@ func assertTicketTransition(from, to models.TicketStatus) error {
 	return nil
 }
 
+func statusPtr(s models.TicketStatus) *string {
+	v := string(s)
+	return &v
+}
+
+func uuidPtr(id uuid.UUID) *uuid.UUID {
+	if id == uuid.Nil {
+		return nil
+	}
+	return &id
+}
+
+func (s *TicketService) logTicketEvent(event *models.TicketEvent) {
+	if event == nil {
+		return
+	}
+	if event.CreatedAt.IsZero() {
+		event.CreatedAt = time.Now()
+	}
+	if err := s.ticketRepo.CreateEvent(event); err != nil {
+		log.Printf("[TICKET_EVENT_ERROR] ticket=%s type=%s err=%v", event.TicketID, event.EventType, err)
+	}
+}
+
+func (s *TicketService) logTicketEventTx(tx *gorm.DB, event *models.TicketEvent) error {
+	if event == nil {
+		return nil
+	}
+	if event.CreatedAt.IsZero() {
+		event.CreatedAt = time.Now()
+	}
+	return repository.NewTicketRepository(tx).CreateEventTx(tx, event)
+}
+
 func NewTicketService(
 	db *gorm.DB,
 	ticketRepo *repository.TicketRepository,
@@ -150,6 +184,14 @@ func (s *TicketService) CustomerCreateTicket(
 		return nil, err
 	}
 
+	s.logTicketEvent(&models.TicketEvent{
+		TicketID:    ticket.ID,
+		EventType:   models.TicketEventCreated,
+		ActorUserID: userID,
+		ToStatus:    statusPtr(models.StatusOpen),
+		CreatedAt:   now,
+	})
+
 	log.Printf("[CUSTOMER_CREATE_TICKET_SUCCESS] ticketID=%s customerID=%s", ticket.ID, customer.ID)
 
 	// Send notification for ticket creation
@@ -222,12 +264,24 @@ func (s *TicketService) AssignTicket(
 			return err
 		}
 
-		return repo.CreateStatusHistory(&models.TicketStatusHistory{
+		if err := repo.CreateStatusHistory(&models.TicketStatusHistory{
 			TicketID:  ticketID,
 			OldStatus: string(models.StatusOpen),
 			NewStatus: string(models.StatusAssigned),
 			ChangedBy: adminID,
 			ChangedAt: now,
+		}); err != nil {
+			return err
+		}
+
+		return s.logTicketEventTx(tx, &models.TicketEvent{
+			TicketID:     ticketID,
+			EventType:    models.TicketEventAssigned,
+			ActorUserID:  adminID,
+			FromStatus:   statusPtr(models.StatusOpen),
+			ToStatus:     statusPtr(models.StatusAssigned),
+			ToEngineerID: uuidPtr(engineerID),
+			CreatedAt:    now,
 		})
 	})
 }
@@ -291,6 +345,17 @@ func (s *TicketService) StartTicket(
 		log.Printf("[START_TICKET_ERROR] Failed to create status history: %v", err)
 		return err
 	}
+
+	s.logTicketEvent(&models.TicketEvent{
+		TicketID:       ticketID,
+		EventType:      models.TicketEventStarted,
+		ActorUserID:    userID,
+		FromStatus:     statusPtr(models.StatusAssigned),
+		ToStatus:       statusPtr(models.StatusInProgress),
+		FromEngineerID: uuidPtr(engineer.ID),
+		ToEngineerID:   uuidPtr(engineer.ID),
+		CreatedAt:      now,
+	})
 
 	// Send notification for status change
 	if s.notificationService != nil {
@@ -397,6 +462,18 @@ func (s *TicketService) CloseTicket(
 		return err
 	}
 
+	s.logTicketEvent(&models.TicketEvent{
+		TicketID:       ticketID,
+		EventType:      models.TicketEventClosed,
+		ActorUserID:    userID,
+		FromStatus:     statusPtr(models.StatusInProgress),
+		ToStatus:       statusPtr(models.StatusClosed),
+		FromEngineerID: uuidPtr(engineer.ID),
+		ToEngineerID:   uuidPtr(engineer.ID),
+		Note:           supportComment,
+		CreatedAt:      now,
+	})
+
 	// Send notification for ticket closure
 	if s.notificationService != nil {
 		log.Printf("[CLOSE_TICKET] Sending closure notifications")
@@ -461,9 +538,10 @@ func (s *TicketService) AdminCloseTicket(
 	log.Printf("[ADMIN_CLOSE_TICKET] Successfully updated ticket in database")
 
 	log.Printf("[ADMIN_CLOSE_TICKET] Creating status history")
+	oldStatus := ticket.Status
 	if err := s.ticketRepo.CreateStatusHistory(&models.TicketStatusHistory{
 		TicketID:  ticketID,
-		OldStatus: string(ticket.Status),
+		OldStatus: string(oldStatus),
 		NewStatus: string(models.StatusClosed),
 		ChangedBy: adminID,
 		ChangedAt: now,
@@ -471,6 +549,22 @@ func (s *TicketService) AdminCloseTicket(
 		log.Printf("[ADMIN_CLOSE_TICKET_ERROR] Failed to create status history: %v", err)
 		return err
 	}
+
+	var fromEng *uuid.UUID
+	if ticket.EngineerID != nil {
+		fromEng = ticket.EngineerID
+	}
+	s.logTicketEvent(&models.TicketEvent{
+		TicketID:       ticketID,
+		EventType:      models.TicketEventClosed,
+		ActorUserID:    adminID,
+		FromStatus:     statusPtr(oldStatus),
+		ToStatus:       statusPtr(models.StatusClosed),
+		FromEngineerID: fromEng,
+		ToEngineerID:   fromEng,
+		Note:           adminComment,
+		CreatedAt:      now,
+	})
 
 	// Send notification for ticket closure
 	if s.notificationService != nil {
@@ -556,12 +650,35 @@ func (s *TicketService) AdminCreateTicketAndAssign(
 			return err
 		}
 
-		return s.ticketRepo.AssignEngineerTx(
+		if err := s.ticketRepo.AssignEngineerTx(
 			tx,
 			ticket.ID,
 			engineerID,
 			adminID,
-		)
+		); err != nil {
+			return err
+		}
+
+		now := time.Now()
+		if err := s.logTicketEventTx(tx, &models.TicketEvent{
+			TicketID:    ticket.ID,
+			EventType:   models.TicketEventCreated,
+			ActorUserID: adminID,
+			ToStatus:    statusPtr(models.StatusAssigned),
+			CreatedAt:   now,
+		}); err != nil {
+			return err
+		}
+
+		return s.logTicketEventTx(tx, &models.TicketEvent{
+			TicketID:     ticket.ID,
+			EventType:    models.TicketEventAssigned,
+			ActorUserID:  adminID,
+			FromStatus:   statusPtr(models.StatusOpen),
+			ToStatus:     statusPtr(models.StatusAssigned),
+			ToEngineerID: uuidPtr(engineerID),
+			CreatedAt:    now,
+		})
 	})
 
 	if err != nil {
@@ -634,12 +751,35 @@ func (s *TicketService) AdminAssignTicket(
 
 		// Assign engineer
 		log.Printf("[ADMIN_ASSIGN_TICKET] Creating ticket assignment")
-		return repo.AssignEngineer(&models.TicketAssignment{
+		if err := repo.AssignEngineer(&models.TicketAssignment{
 			TicketID:           ticketID,
 			CustomerSolutionID: cs.ID,
 			EngineerID:         engineerID,
 			AssignedBy:         adminID,
 			AssignedAt:         time.Now(),
+		}); err != nil {
+			return err
+		}
+
+		now := time.Now()
+		if err := repo.CreateStatusHistory(&models.TicketStatusHistory{
+			TicketID:  ticketID,
+			OldStatus: string(ticket.Status),
+			NewStatus: string(models.StatusAssigned),
+			ChangedBy: adminID,
+			ChangedAt: now,
+		}); err != nil {
+			return err
+		}
+
+		return s.logTicketEventTx(tx, &models.TicketEvent{
+			TicketID:     ticketID,
+			EventType:    models.TicketEventAssigned,
+			ActorUserID:  adminID,
+			FromStatus:   statusPtr(ticket.Status),
+			ToStatus:     statusPtr(models.StatusAssigned),
+			ToEngineerID: uuidPtr(engineerID),
+			CreatedAt:    now,
 		})
 	})
 
@@ -744,14 +884,32 @@ func (s *TicketService) ReassignTicket(
 
 		// Create new assignment record
 		log.Printf("[REASSIGN_TICKET] Creating new assignment record")
+		oldEngineerID := *ticket.EngineerID
+		csID := uuid.Nil
+		if ticket.CustomerSolutionID != nil {
+			csID = *ticket.CustomerSolutionID
+		}
 		if err := repo.AssignEngineer(&models.TicketAssignment{
 			TicketID:           ticketID,
-			CustomerSolutionID: *ticket.CustomerSolutionID,
+			CustomerSolutionID: csID,
 			EngineerID:         newEngineerID,
 			AssignedBy:         adminID,
 			AssignedAt:         time.Now(),
 		}); err != nil {
 			log.Printf("[REASSIGN_TICKET_ERROR] Failed to create assignment: %v", err)
+			return err
+		}
+
+		if err := s.logTicketEventTx(tx, &models.TicketEvent{
+			TicketID:       ticketID,
+			EventType:      models.TicketEventReassigned,
+			ActorUserID:    adminID,
+			FromStatus:     statusPtr(ticket.Status),
+			ToStatus:       statusPtr(ticket.Status),
+			FromEngineerID: uuidPtr(oldEngineerID),
+			ToEngineerID:   uuidPtr(newEngineerID),
+			CreatedAt:      time.Now(),
+		}); err != nil {
 			return err
 		}
 
@@ -966,4 +1124,184 @@ func (s *TicketService) resolveSupportEngineer(userID uuid.UUID) (*models.Suppor
 		return nil, errors.New("support engineer profile not found")
 	}
 	return &engineer, nil
+}
+
+/* =========================
+   ADMIN: REOPEN TICKET
+========================= */
+
+func (s *TicketService) ReopenTicket(
+	ticketID string,
+	adminID uuid.UUID,
+	note string,
+) (*models.Ticket, error) {
+	log.Printf("[REOPEN_TICKET] ticketID=%s adminID=%s", ticketID, adminID)
+
+	ticket, err := s.ticketRepo.GetByID(ticketID)
+	if err != nil {
+		return nil, errors.New("ticket not found")
+	}
+
+	if err := assertTicketTransition(ticket.Status, models.StatusOpen); err != nil {
+		return nil, err
+	}
+
+	now := time.Now()
+	var fromEng *uuid.UUID
+	if ticket.EngineerID != nil {
+		fromEng = ticket.EngineerID
+	}
+
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		repo := repository.NewTicketRepository(tx)
+
+		if err := repo.UpdateFields(ticketID, map[string]interface{}{
+			"status":               models.StatusOpen,
+			"engineer_id":          nil,
+			"customer_solution_id": nil,
+			"closed_at":            nil,
+			"support_comment":      nil,
+			"closure_proof_image":  nil,
+			"updated_at":           now,
+		}); err != nil {
+			return err
+		}
+
+		if err := repo.CreateStatusHistory(&models.TicketStatusHistory{
+			TicketID:  ticketID,
+			OldStatus: string(models.StatusClosed),
+			NewStatus: string(models.StatusOpen),
+			ChangedBy: adminID,
+			ChangedAt: now,
+		}); err != nil {
+			return err
+		}
+
+		return s.logTicketEventTx(tx, &models.TicketEvent{
+			TicketID:       ticketID,
+			EventType:      models.TicketEventReopened,
+			ActorUserID:    adminID,
+			FromStatus:     statusPtr(models.StatusClosed),
+			ToStatus:       statusPtr(models.StatusOpen),
+			FromEngineerID: fromEng,
+			Note:           note,
+			CreatedAt:      now,
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return s.ticketRepo.GetByID(ticketID)
+}
+
+/* =========================
+   ADMIN: TICKET STATUS PAGE
+========================= */
+
+type TicketStatusRow struct {
+	Ticket           models.Ticket       `json:"ticket"`
+	LastEvent        *models.TicketEvent `json:"last_event,omitempty"`
+	ReopenCount      int64               `json:"reopen_count"`
+	CompanyName      string              `json:"company_name"`
+	CustomerName     string              `json:"customer_name"`
+	EngineerName     string              `json:"engineer_name"`
+	LastEventSummary string              `json:"last_event_summary"`
+}
+
+func engineerDisplayName(eng *models.SupportEngineer) string {
+	if eng == nil {
+		return ""
+	}
+	if eng.User.Name != "" {
+		return eng.User.Name
+	}
+	if eng.User.Email != "" {
+		return eng.User.Email
+	}
+	return ""
+}
+
+func eventSummary(ev *models.TicketEvent) string {
+	if ev == nil {
+		return ""
+	}
+	switch ev.EventType {
+	case models.TicketEventCreated:
+		return "Created"
+	case models.TicketEventAssigned:
+		name := engineerDisplayName(ev.ToEngineer)
+		if name != "" {
+			return "Assigned to " + name
+		}
+		return "Assigned"
+	case models.TicketEventReassigned:
+		from := engineerDisplayName(ev.FromEngineer)
+		to := engineerDisplayName(ev.ToEngineer)
+		if from != "" && to != "" {
+			return "Reassigned from " + from + " to " + to
+		}
+		if to != "" {
+			return "Reassigned to " + to
+		}
+		return "Reassigned"
+	case models.TicketEventStarted:
+		return "Started"
+	case models.TicketEventClosed:
+		return "Closed"
+	case models.TicketEventReopened:
+		return "Reopened"
+	default:
+		return string(ev.EventType)
+	}
+}
+
+func (s *TicketService) ListTicketStatus(filter repository.TicketStatusListFilter) ([]TicketStatusRow, error) {
+	tickets, err := s.ticketRepo.ListForStatusPage(filter)
+	if err != nil {
+		return nil, err
+	}
+
+	ids := make([]string, 0, len(tickets))
+	for _, t := range tickets {
+		ids = append(ids, t.ID)
+	}
+
+	latest, err := s.ticketRepo.GetLatestEventsByTicketIDs(ids)
+	if err != nil {
+		log.Printf("[TICKET_STATUS] latest events failed: %v", err)
+		latest = map[string]models.TicketEvent{}
+	}
+	reopens, err := s.ticketRepo.CountReopensByTicketIDs(ids)
+	if err != nil {
+		log.Printf("[TICKET_STATUS] reopen counts failed: %v", err)
+		reopens = map[string]int64{}
+	}
+
+	rows := make([]TicketStatusRow, 0, len(tickets))
+	for _, t := range tickets {
+		row := TicketStatusRow{Ticket: t, ReopenCount: reopens[t.ID]}
+		row.CustomerName = t.Customer.Name
+		if t.Customer.Company.Name != "" {
+			row.CompanyName = t.Customer.Company.Name
+		}
+		row.EngineerName = engineerDisplayName(t.SupportEngineer)
+		if ev, ok := latest[t.ID]; ok {
+			copyEv := ev
+			row.LastEvent = &copyEv
+			row.LastEventSummary = eventSummary(&copyEv)
+		}
+		rows = append(rows, row)
+	}
+	return rows, nil
+}
+
+func (s *TicketService) ListTicketEvents(ticketID string) ([]models.TicketEvent, error) {
+	if ticketID == "" {
+		return nil, errors.New("ticket_id is required")
+	}
+	if _, err := s.ticketRepo.GetByID(ticketID); err != nil {
+		return nil, errors.New("ticket not found")
+	}
+	return s.ticketRepo.ListEventsByTicketID(ticketID)
 }

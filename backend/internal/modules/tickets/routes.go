@@ -24,6 +24,9 @@ func RegisterAdmin(admin *gin.RouterGroup, h Handlers) {
 	admin.POST("/tickets/assign", h.Ticket.AssignTicket)
 	admin.POST("/tickets/reassign", h.Ticket.ReassignTicket)
 	admin.POST("/tickets/close", h.Ticket.AdminCloseTicket)
+	admin.POST("/tickets/reopen", h.Ticket.ReopenTicket)
+	admin.GET("/tickets/status", h.Ticket.ListTicketStatus)
+	admin.GET("/tickets/events", h.Ticket.ListTicketEvents)
 	admin.GET("/tickets/visits", h.Ticket.ListAdminTicketVisits)
 }
 

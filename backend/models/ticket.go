@@ -125,6 +125,42 @@ func (TicketStatusHistory) TableName() string {
 }
 
 /* =========================
+   TICKET EVENTS (lifecycle audit)
+========================= */
+
+type TicketEventType string
+
+const (
+	TicketEventCreated    TicketEventType = "created"
+	TicketEventAssigned   TicketEventType = "assigned"
+	TicketEventReassigned TicketEventType = "reassigned"
+	TicketEventStarted    TicketEventType = "started"
+	TicketEventClosed     TicketEventType = "closed"
+	TicketEventReopened   TicketEventType = "reopened"
+)
+
+type TicketEvent struct {
+	ID             uuid.UUID       `json:"id" gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	TicketID       string          `json:"ticket_id" gorm:"type:varchar(20);index;not null"`
+	EventType      TicketEventType `json:"event_type" gorm:"type:varchar(32);index;not null"`
+	ActorUserID    uuid.UUID       `json:"actor_user_id" gorm:"type:uuid;index;not null"`
+	FromStatus     *string         `json:"from_status,omitempty" gorm:"type:varchar(32)"`
+	ToStatus       *string         `json:"to_status,omitempty" gorm:"type:varchar(32)"`
+	FromEngineerID *uuid.UUID      `json:"from_engineer_id,omitempty" gorm:"type:uuid"`
+	ToEngineerID   *uuid.UUID      `json:"to_engineer_id,omitempty" gorm:"type:uuid"`
+	Note           string          `json:"note,omitempty" gorm:"type:text"`
+	CreatedAt      time.Time       `json:"created_at"`
+
+	Actor        *User            `json:"actor,omitempty" gorm:"foreignKey:ActorUserID"`
+	FromEngineer *SupportEngineer `json:"from_engineer,omitempty" gorm:"foreignKey:FromEngineerID"`
+	ToEngineer   *SupportEngineer `json:"to_engineer,omitempty" gorm:"foreignKey:ToEngineerID"`
+}
+
+func (TicketEvent) TableName() string {
+	return "ticket_events"
+}
+
+/* =========================
    COMMENTS
 ========================= */
 

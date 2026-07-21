@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"rbac/models"
+	"rbac/repository"
 	"rbac/service"
 	"rbac/utils"
 )
@@ -547,4 +548,98 @@ func (h *TicketHandler) ListAdminTicketVisits(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, visits)
+}
+
+/* =========================
+   ADMIN: REOPEN TICKET
+========================= */
+
+type ReopenTicketRequest struct {
+	TicketID string `json:"ticket_id" binding:"required"`
+	Note     string `json:"note"`
+}
+
+func (h *TicketHandler) ReopenTicket(c *gin.Context) {
+	adminID := c.MustGet("user_id").(uuid.UUID)
+
+	var req ReopenTicketRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+
+	ticket, err := h.service.ReopenTicket(req.TicketID, adminID, req.Note)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, ticket)
+}
+
+/* =========================
+   ADMIN: TICKET STATUS + EVENTS
+========================= */
+
+func (h *TicketHandler) ListTicketStatus(c *gin.Context) {
+	filter := repository.TicketStatusListFilter{
+		Status: c.Query("status"),
+		Search: c.Query("search"),
+	}
+
+	if v := c.Query("engineer_id"); v != "" {
+		id, err := uuid.Parse(v)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid engineer_id"})
+			return
+		}
+		filter.EngineerID = &id
+	}
+	if v := c.Query("company_id"); v != "" {
+		id, err := uuid.Parse(v)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid company_id"})
+			return
+		}
+		filter.CompanyID = &id
+	}
+	if v := c.Query("start_date"); v != "" {
+		d, err := time.Parse("2006-01-02", v)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "start_date must be YYYY-MM-DD"})
+			return
+		}
+		filter.StartDate = &d
+	}
+	if v := c.Query("end_date"); v != "" {
+		d, err := time.Parse("2006-01-02", v)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "end_date must be YYYY-MM-DD"})
+			return
+		}
+		end := d.Add(23*time.Hour + 59*time.Minute + 59*time.Second)
+		filter.EndDate = &end
+	}
+
+	rows, err := h.service.ListTicketStatus(filter)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load ticket status"})
+		return
+	}
+	c.JSON(http.StatusOK, rows)
+}
+
+func (h *TicketHandler) ListTicketEvents(c *gin.Context) {
+	ticketID := c.Query("ticket_id")
+	if ticketID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ticket_id is required"})
+		return
+	}
+
+	events, err := h.service.ListTicketEvents(ticketID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, events)
 }

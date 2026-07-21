@@ -14,7 +14,9 @@ var ValidTransitions = map[models.TicketStatus][]models.TicketStatus{
 	models.StatusInProgress: {
 		models.StatusClosed,
 	},
-	models.StatusClosed: {},
+	models.StatusClosed: {
+		models.StatusOpen, // admin reopen
+	},
 }
 
 func CanTransition(from, to models.TicketStatus) bool {

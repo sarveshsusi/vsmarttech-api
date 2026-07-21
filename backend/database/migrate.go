@@ -38,6 +38,7 @@ func Migrate(db *gorm.DB) {
 		&models.Ticket{},
 		&models.TicketAssignment{},
 		&models.TicketStatusHistory{},
+		&models.TicketEvent{},
 		&models.TicketComment{},
 		&models.TicketAttachment{},
 		&models.TicketFeedback{},
