@@ -50,6 +50,11 @@ type AuditListFilter struct {
 func (r *AuditRepository) List(filter AuditListFilter) ([]models.AuditLog, int64, error) {
 	q := r.db.Model(&models.AuditLog{})
 
+	// Hide read-only HTTP noise from older middleware that logged every GET.
+	q = q.Where(
+		"action NOT ILIKE 'GET %' AND action NOT ILIKE 'HEAD %' AND action NOT ILIKE 'OPTIONS %'",
+	)
+
 	if filter.Search != "" {
 		like := "%" + filter.Search + "%"
 		q = q.Where("action ILIKE ? OR ip ILIKE ?", like, like)

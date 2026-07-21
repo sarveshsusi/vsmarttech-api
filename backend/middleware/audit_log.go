@@ -48,11 +48,12 @@ func AuditLog() gin.HandlerFunc {
 			"duration_ms", duration.Milliseconds(),
 		)
 
-		if database.DB == nil {
+		// Persist only mutating / meaningful requests — raw GETs drown the admin UI.
+		if database.DB == nil || !shouldPersistAudit(method, path) {
 			return
 		}
 
-		action := method + " " + path
+		action := fmt.Sprintf("%s %s → %d", method, path, statusCode)
 		_ = database.DB.Create(&models.AuditLog{
 			Entity:      "http_request",
 			EntityID:    uuid.Nil,
@@ -62,6 +63,18 @@ func AuditLog() gin.HandlerFunc {
 			UserAgent:   truncate(c.Request.UserAgent(), 250),
 		}).Error
 	}
+}
+
+func shouldPersistAudit(method, path string) bool {
+	switch method {
+	case "GET", "HEAD", "OPTIONS":
+		return false
+	}
+	switch path {
+	case "/health", "/ready", "/metrics":
+		return false
+	}
+	return true
 }
 
 func truncate(s string, n int) string {
