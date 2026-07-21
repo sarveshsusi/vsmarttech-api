@@ -59,6 +59,56 @@ paths:
       responses:
         "200":
           description: Ticket list
+  /api/v1/support/tickets/visits:
+    get:
+      summary: List field visits for an assigned ticket
+      tags: [tickets]
+      security: [{bearerAuth: []}]
+      parameters:
+        - in: query
+          name: ticket_id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Field visit list
+    post:
+      summary: Log a field visit on an assigned In Progress ticket
+      tags: [tickets]
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ticket_id, visit_date, notes]
+              properties:
+                ticket_id: { type: string }
+                visit_date: { type: string, format: date }
+                notes: { type: string }
+                co_engineer_ids:
+                  type: array
+                  items: { type: string, format: uuid }
+                proof_urls:
+                  type: array
+                  items: { type: string }
+      responses:
+        "201":
+          description: Visit created
+  /api/v1/admin/tickets/visits:
+    get:
+      summary: Admin read-only field visits for a ticket
+      tags: [tickets]
+      security: [{bearerAuth: []}]
+      parameters:
+        - in: query
+          name: ticket_id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Field visit list
   /api/v1/customer/tickets:
     get:
       summary: Customer tickets

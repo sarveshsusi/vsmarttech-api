@@ -27,20 +27,45 @@ func (SupportEngineer) TableName() string {
 }
 
 /* =========================
-   SERVICE VISIT
+   SERVICE VISIT (ticket field visits)
 ========================= */
 
 type ServiceVisit struct {
-	ID         uuid.UUID  `json:"id" gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	TicketID   string     `json:"ticket_id" gorm:"type:varchar(20)"`
-	EngineerID uuid.UUID  `json:"engineer_id" gorm:"type:uuid"`
-	StartTime  time.Time  `json:"start_time"`
-	EndTime    *time.Time `json:"end_time,omitempty"`
-	Notes      string     `json:"notes"`
+	ID         uuid.UUID `json:"id" gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	TicketID   string    `json:"ticket_id" gorm:"type:varchar(20);index;not null"`
+	EngineerID uuid.UUID `json:"engineer_id" gorm:"type:uuid;index;not null"` // assigned engineer who logged the visit
+	VisitDate  time.Time `json:"visit_date" gorm:"type:date;not null"`
+	Notes      string    `json:"notes" gorm:"type:text;not null"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+
+	// Keep legacy columns nullable so AutoMigrate does not break existing rows
+	StartTime *time.Time `json:"-" gorm:"column:start_time"`
+	EndTime   *time.Time `json:"-" gorm:"column:end_time"`
+
+	Engineer    *SupportEngineer    `json:"logged_by,omitempty" gorm:"foreignKey:EngineerID"`
+	CoEngineers []SupportEngineer   `json:"co_engineers,omitempty" gorm:"many2many:service_visit_co_engineers;"`
+	Proofs      []ServiceVisitProof `json:"proofs,omitempty" gorm:"foreignKey:ServiceVisitID"`
 }
 
 func (ServiceVisit) TableName() string {
 	return "service_visits"
+}
+
+/* =========================
+   SERVICE VISIT PROOF
+========================= */
+
+type ServiceVisitProof struct {
+	ID             uuid.UUID `json:"id" gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	ServiceVisitID uuid.UUID `json:"service_visit_id" gorm:"type:uuid;index;not null"`
+	URL            string    `json:"url" gorm:"type:text;not null"`
+	FileName       string    `json:"file_name" gorm:"type:varchar(255)"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
+func (ServiceVisitProof) TableName() string {
+	return "service_visit_proofs"
 }
 
 /* =========================

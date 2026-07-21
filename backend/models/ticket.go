@@ -78,6 +78,9 @@ type Ticket struct {
 	// Attachments relationship
 	Attachments []TicketAttachment `gorm:"foreignKey:TicketID" json:"attachments,omitempty"`
 
+	// Populated at read time (not a DB column)
+	VisitCount int `json:"visit_count" gorm:"-"`
+
 	CreatedBy uuid.UUID `json:"created_by"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

@@ -21,6 +21,7 @@ type TicketService struct {
 	customerSolutionRepo *repository.CustomerSolutionRepository
 	notificationService  *NotificationService
 	escalationRepo       *repository.TicketEscalationRepository
+	visitRepo            *repository.ServiceVisitRepository
 }
 
 func assertTicketTransition(from, to models.TicketStatus) error {
@@ -44,6 +45,7 @@ func NewTicketService(
 		customerSolutionRepo: customerSolutionRepo,
 		notificationService:  notificationService,
 		escalationRepo:       repository.NewTicketEscalationRepository(db),
+		visitRepo:            repository.NewServiceVisitRepository(db),
 	}
 }
 
@@ -352,6 +354,16 @@ func (s *TicketService) CloseTicket(
 	if err := assertTicketTransition(ticket.Status, models.StatusClosed); err != nil {
 		log.Printf("[CLOSE_TICKET_ERROR] %v", err)
 		return err
+	}
+
+	visitCount, err := s.visitRepo.CountByTicketID(ticketID)
+	if err != nil {
+		log.Printf("[CLOSE_TICKET_ERROR] Failed to count field visits: %v", err)
+		return errors.New("failed to verify field visits")
+	}
+	if visitCount < 1 {
+		log.Printf("[CLOSE_TICKET_ERROR] No field visits logged for ticket %s", ticketID)
+		return errors.New("log at least one field visit before closing this ticket")
 	}
 
 	now := time.Now()
@@ -766,4 +778,178 @@ func (s *TicketService) ReassignTicket(
 
 	log.Printf("[REASSIGN_TICKET_SUCCESS] Ticket reassigned successfully")
 	return updatedTicket, nil
+}
+
+/* =========================
+   FIELD VISITS
+========================= */
+
+type CreateFieldVisitInput struct {
+	TicketID       string
+	VisitDate      time.Time
+	Notes          string
+	CoEngineerIDs  []uuid.UUID
+	ProofURLs      []string
+}
+
+func (s *TicketService) AttachVisitCounts(tickets []models.Ticket) error {
+	if len(tickets) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(tickets))
+	for _, t := range tickets {
+		ids = append(ids, t.ID)
+	}
+	counts, err := s.visitRepo.CountByTicketIDs(ids)
+	if err != nil {
+		return err
+	}
+	for i := range tickets {
+		tickets[i].VisitCount = counts[tickets[i].ID]
+	}
+	return nil
+}
+
+func (s *TicketService) GetAllWithVisitCounts() ([]models.Ticket, error) {
+	tickets, err := s.ticketRepo.GetAll()
+	if err != nil {
+		return nil, err
+	}
+	if err := s.AttachVisitCounts(tickets); err != nil {
+		log.Printf("[GET_ADMIN_TICKETS] visit count attach failed: %v", err)
+	}
+	return tickets, nil
+}
+
+func (s *TicketService) ListFieldVisits(ticketID string) ([]models.ServiceVisit, error) {
+	if ticketID == "" {
+		return nil, errors.New("ticket_id is required")
+	}
+	if _, err := s.ticketRepo.GetByID(ticketID); err != nil {
+		return nil, errors.New("ticket not found")
+	}
+	return s.visitRepo.ListByTicketID(ticketID)
+}
+
+func (s *TicketService) ListFieldVisitsForAssignedEngineer(
+	ticketID string,
+	userID uuid.UUID,
+) ([]models.ServiceVisit, error) {
+	engineer, err := s.resolveSupportEngineer(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	ticket, err := s.ticketRepo.GetByID(ticketID)
+	if err != nil {
+		return nil, errors.New("ticket not found")
+	}
+	if ticket.EngineerID == nil || *ticket.EngineerID != engineer.ID {
+		return nil, errors.New("you are not assigned to this ticket")
+	}
+
+	return s.visitRepo.ListByTicketID(ticketID)
+}
+
+func (s *TicketService) CreateFieldVisit(
+	userID uuid.UUID,
+	input CreateFieldVisitInput,
+) (*models.ServiceVisit, error) {
+	if input.TicketID == "" {
+		return nil, errors.New("ticket_id is required")
+	}
+	if input.Notes == "" {
+		return nil, errors.New("notes are required")
+	}
+	if input.VisitDate.IsZero() {
+		return nil, errors.New("visit_date is required")
+	}
+
+	engineer, err := s.resolveSupportEngineer(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	ticket, err := s.ticketRepo.GetByID(input.TicketID)
+	if err != nil {
+		return nil, errors.New("ticket not found")
+	}
+	if ticket.EngineerID == nil || *ticket.EngineerID != engineer.ID {
+		return nil, errors.New("you are not assigned to this ticket")
+	}
+	if ticket.Status != models.StatusInProgress {
+		return nil, errors.New("field visits can only be logged while ticket is In Progress")
+	}
+
+	// Validate co-engineers exist and exclude self
+	coIDs := make([]uuid.UUID, 0, len(input.CoEngineerIDs))
+	seen := map[uuid.UUID]bool{}
+	for _, id := range input.CoEngineerIDs {
+		if id == uuid.Nil || id == engineer.ID || seen[id] {
+			continue
+		}
+		var eng models.SupportEngineer
+		if err := s.db.Where("id = ? AND is_active = true", id).First(&eng).Error; err != nil {
+			return nil, fmt.Errorf("invalid co-engineer id: %s", id)
+		}
+		seen[id] = true
+		coIDs = append(coIDs, id)
+	}
+
+	visitDate := time.Date(
+		input.VisitDate.Year(),
+		input.VisitDate.Month(),
+		input.VisitDate.Day(),
+		0, 0, 0, 0,
+		time.UTC,
+	)
+
+	visit := &models.ServiceVisit{
+		TicketID:   input.TicketID,
+		EngineerID: engineer.ID,
+		VisitDate:  visitDate,
+		Notes:      input.Notes,
+		StartTime:  &visitDate, // satisfy legacy NOT NULL column if present
+	}
+
+	if err := s.visitRepo.Create(visit); err != nil {
+		return nil, err
+	}
+
+	if err := s.visitRepo.ReplaceCoEngineers(visit.ID, coIDs); err != nil {
+		return nil, err
+	}
+
+	proofs := make([]models.ServiceVisitProof, 0, len(input.ProofURLs))
+	for _, url := range input.ProofURLs {
+		if url == "" {
+			continue
+		}
+		proofs = append(proofs, models.ServiceVisitProof{
+			ServiceVisitID: visit.ID,
+			URL:            url,
+		})
+	}
+	if err := s.visitRepo.CreateProofs(proofs); err != nil {
+		return nil, err
+	}
+
+	visits, err := s.visitRepo.ListByTicketID(input.TicketID)
+	if err != nil {
+		return visit, nil
+	}
+	for i := range visits {
+		if visits[i].ID == visit.ID {
+			return &visits[i], nil
+		}
+	}
+	return visit, nil
+}
+
+func (s *TicketService) resolveSupportEngineer(userID uuid.UUID) (*models.SupportEngineer, error) {
+	var engineer models.SupportEngineer
+	if err := s.db.Where("user_id = ?", userID).First(&engineer).Error; err != nil {
+		return nil, errors.New("support engineer profile not found")
+	}
+	return &engineer, nil
 }

@@ -46,6 +46,7 @@ func Migrate(db *gorm.DB) {
 		   FIELD SERVICE & AUDIT
 		========================= */
 		&models.ServiceVisit{},
+		&models.ServiceVisitProof{},
 		&models.GPSLog{},
 		&models.DigitalSignature{},
 		&models.AuditLog{},

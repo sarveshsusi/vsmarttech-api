@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
 	"rbac/models"
 	"rbac/repository"
@@ -12,6 +13,7 @@ import (
 type SupportService struct {
 	ticketRepo          *repository.TicketRepository
 	supportEngineerRepo *repository.SupportEngineerRepository
+	visitRepo           *repository.ServiceVisitRepository
 }
 
 /* =========================
@@ -21,10 +23,12 @@ type SupportService struct {
 func NewSupportService(
 	ticketRepo *repository.TicketRepository,
 	supportEngineerRepo *repository.SupportEngineerRepository,
+	db *gorm.DB,
 ) *SupportService {
 	return &SupportService{
 		ticketRepo:          ticketRepo,
 		supportEngineerRepo: supportEngineerRepo,
+		visitRepo:           repository.NewServiceVisitRepository(db),
 	}
 }
 
@@ -47,7 +51,25 @@ func (s *SupportService) GetMyTickets(
 		return nil, errors.New("support engineer profile not found")
 	}
 
-	return s.ticketRepo.GetByEngineerID(engineer.ID)
+	tickets, err := s.ticketRepo.GetByEngineerID(engineer.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(tickets) > 0 {
+		ids := make([]string, 0, len(tickets))
+		for _, t := range tickets {
+			ids = append(ids, t.ID)
+		}
+		counts, countErr := s.visitRepo.CountByTicketIDs(ids)
+		if countErr == nil {
+			for i := range tickets {
+				tickets[i].VisitCount = counts[tickets[i].ID]
+			}
+		}
+	}
+
+	return tickets, nil
 }
 
 /* =========================

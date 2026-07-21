@@ -24,12 +24,15 @@ func RegisterAdmin(admin *gin.RouterGroup, h Handlers) {
 	admin.POST("/tickets/assign", h.Ticket.AssignTicket)
 	admin.POST("/tickets/reassign", h.Ticket.ReassignTicket)
 	admin.POST("/tickets/close", h.Ticket.AdminCloseTicket)
+	admin.GET("/tickets/visits", h.Ticket.ListAdminTicketVisits)
 }
 
 // RegisterSupport mounts support ticket lifecycle routes.
 func RegisterSupport(support *gin.RouterGroup, h Handlers) {
 	support.POST("/tickets/start/*id", h.Ticket.StartTicket)
 	support.POST("/tickets/close", h.Ticket.CloseTicket)
+	support.GET("/tickets/visits", h.Ticket.ListSupportTicketVisits)
+	support.POST("/tickets/visits", h.Ticket.CreateSupportTicketVisit)
 }
 
 // RegisterCustomer mounts customer ticket + feedback routes.

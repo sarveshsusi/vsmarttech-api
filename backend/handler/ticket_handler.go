@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -276,7 +277,7 @@ func (h *TicketHandler) AdminCloseTicket(c *gin.Context) {
 ========================= */
 
 func (h *TicketHandler) GetAdminTickets(c *gin.Context) {
-	tickets, err := h.service.GetAll()
+	tickets, err := h.service.GetAllWithVisitCounts()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid request"})
 		return
@@ -426,4 +427,81 @@ func (h *TicketHandler) UploadProofImage(c *gin.Context) {
 		"url":     imageURL,
 		"message": "Image uploaded successfully",
 	})
+}
+
+/* =========================
+   FIELD VISITS
+========================= */
+
+type CreateFieldVisitRequest struct {
+	TicketID      string      `json:"ticket_id" binding:"required"`
+	VisitDate     string      `json:"visit_date" binding:"required"`
+	Notes         string      `json:"notes" binding:"required"`
+	CoEngineerIDs []uuid.UUID `json:"co_engineer_ids"`
+	ProofURLs     []string    `json:"proof_urls"`
+}
+
+func (h *TicketHandler) ListSupportTicketVisits(c *gin.Context) {
+	userID := c.MustGet("user_id").(uuid.UUID)
+	ticketID := c.Query("ticket_id")
+	if ticketID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ticket_id is required"})
+		return
+	}
+
+	visits, err := h.service.ListFieldVisitsForAssignedEngineer(ticketID, userID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, visits)
+}
+
+func (h *TicketHandler) CreateSupportTicketVisit(c *gin.Context) {
+	userID := c.MustGet("user_id").(uuid.UUID)
+
+	var req CreateFieldVisitRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+
+	visitDate, err := time.Parse("2006-01-02", req.VisitDate)
+	if err != nil {
+		// Also accept RFC3339 from some clients
+		visitDate, err = time.Parse(time.RFC3339, req.VisitDate)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "visit_date must be YYYY-MM-DD"})
+			return
+		}
+	}
+
+	visit, err := h.service.CreateFieldVisit(userID, service.CreateFieldVisitInput{
+		TicketID:      req.TicketID,
+		VisitDate:     visitDate,
+		Notes:         strings.TrimSpace(req.Notes),
+		CoEngineerIDs: req.CoEngineerIDs,
+		ProofURLs:     req.ProofURLs,
+	})
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, visit)
+}
+
+func (h *TicketHandler) ListAdminTicketVisits(c *gin.Context) {
+	ticketID := c.Query("ticket_id")
+	if ticketID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ticket_id is required"})
+		return
+	}
+
+	visits, err := h.service.ListFieldVisits(ticketID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, visits)
 }
