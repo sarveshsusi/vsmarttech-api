@@ -122,7 +122,7 @@ func wireHTTP(
 	customerService := service.NewCustomerService(db, authRepo, customerRepo, ticketRepo)
 	solutionService := service.NewSolutionService(solutionRepo)
 	customerSolutionService := service.NewCustomerSolutionService(db, customerSolutionRepo, customerRepo)
-	notificationService := service.NewNotificationService(db, notificationRepo, ticketRepo, userRepo, customerRepo, mailer)
+	notificationService := service.NewNotificationService(db, notificationRepo, ticketRepo, userRepo, customerRepo, mailer, cfg.FrontendURL)
 	ticketService := service.NewTicketService(db, ticketRepo, customerRepo, customerSolutionRepo, notificationService)
 	supportService := service.NewSupportService(ticketRepo, supportEngineerRepo, db)
 	adminService := service.NewAdminService(dashboardRepo)

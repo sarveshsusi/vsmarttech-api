@@ -685,6 +685,10 @@ func (s *TicketService) AdminCreateTicketAndAssign(
 		return nil, err
 	}
 
+	if s.notificationService != nil {
+		go s.notificationService.NotifyTicketCreated(ticket.ID, customerID)
+	}
+
 	return ticket, nil
 }
 

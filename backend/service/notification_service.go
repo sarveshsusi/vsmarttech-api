@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/url"
+	"strings"
 	"time"
 
 	"rbac/models"
@@ -21,6 +23,7 @@ type NotificationService struct {
 	userRepo     *repository.UserRepository
 	customerRepo *repository.CustomerRepository
 	mailer       *utils.Mailer
+	frontendURL  string
 }
 
 func NewNotificationService(
@@ -30,6 +33,7 @@ func NewNotificationService(
 	userRepo *repository.UserRepository,
 	customerRepo *repository.CustomerRepository,
 	mailer *utils.Mailer,
+	frontendURL string,
 ) *NotificationService {
 	return &NotificationService{
 		db:           db,
@@ -38,7 +42,51 @@ func NewNotificationService(
 		userRepo:     userRepo,
 		customerRepo: customerRepo,
 		mailer:       mailer,
+		frontendURL:  strings.TrimRight(frontendURL, "/"),
 	}
+}
+
+func (s *NotificationService) customerTicketURL(ticketID string) string {
+	base := s.frontendURL
+	if base == "" {
+		base = "http://localhost:5173"
+	}
+	return base + "/customer/tickets"
+}
+
+func (s *NotificationService) adminTicketURL(ticketID string) string {
+	base := s.frontendURL
+	if base == "" {
+		base = "http://localhost:5173"
+	}
+	return base + "/admin/tickets/details?id=" + url.QueryEscape(ticketID)
+}
+
+func (s *NotificationService) resolveEngineerDisplayName(ticket *models.Ticket) string {
+	if ticket == nil {
+		return "Support Team"
+	}
+	if ticket.SupportEngineer != nil {
+		if ticket.SupportEngineer.User.Name != "" {
+			return ticket.SupportEngineer.User.Name
+		}
+		if ticket.SupportEngineer.User.Email != "" {
+			return ticket.SupportEngineer.User.Email
+		}
+	}
+	if ticket.EngineerID == nil {
+		return "Support Team"
+	}
+	var eng models.SupportEngineer
+	if err := s.db.Preload("User").Where("id = ?", *ticket.EngineerID).First(&eng).Error; err == nil {
+		if eng.User.Name != "" {
+			return eng.User.Name
+		}
+		if eng.User.Email != "" {
+			return eng.User.Email
+		}
+	}
+	return "Support Team"
 }
 
 /* =========================
@@ -172,8 +220,7 @@ func (s *NotificationService) NotifyTicketCreated(
 		}
 	}
 
-	// Notify customer about ticket creation confirmation
-	// Use customer's UserID from users table, not customer ID
+	// Notify customer about ticket creation confirmation + email
 	if err == nil && customer.UserID != uuid.Nil {
 		customerMsg := fmt.Sprintf(
 			"Your ticket '%s' has been successfully created and is awaiting assignment",
@@ -189,6 +236,33 @@ func (s *NotificationService) NotifyTicketCreated(
 			nil,
 		); err != nil {
 			log.Printf("[NOTIFY_TICKET_CREATED_ERROR] Failed to create customer notification: %v", err)
+		}
+
+		var user models.User
+		if uErr := s.db.Where("id = ?", customer.UserID).First(&user).Error; uErr == nil && user.Email != "" {
+			name := user.Name
+			if name == "" {
+				name = customer.Name
+			}
+			if name == "" {
+				name = "Customer"
+			}
+			emailHTML := utils.TicketCreatedEmailTemplate(
+				name,
+				ticket.ID,
+				ticket.Title,
+				s.customerTicketURL(ticket.ID),
+			)
+			subject := "We received your support ticket #" + ticket.ID
+			if s.mailer != nil {
+				if sendErr := s.mailer.Send(user.Email, subject, emailHTML); sendErr != nil {
+					log.Printf("[EMAIL_ERROR] Failed to send ticket-created email to %s: %v", user.Email, sendErr)
+				} else {
+					log.Printf("[EMAIL_SENT] Ticket created email sent to %s", user.Email)
+				}
+			} else {
+				log.Printf("[MAILER_WARN] Mailer not configured, skipping ticket-created email")
+			}
 		}
 	} else {
 		log.Printf("[NOTIFY_TICKET_CREATED_WARN] Customer not found or no UserID, skipping customer notification")
@@ -462,39 +536,38 @@ func (s *NotificationService) NotifyTicketClosed(
 	}
 
 	// Get the engineer name if available
-	engineerName := "Support Team"
-	if ticket.EngineerID != nil && *ticket.EngineerID != uuid.Nil {
-		engineer, err := s.userRepo.GetByID(*ticket.EngineerID)
-		if err == nil && engineer != nil {
-			engineerName = engineer.Name
-		}
-	}
+	engineerName := s.resolveEngineerDisplayName(ticket)
 
 	// Notify customer about closure
 	if err == nil && customer.UserID != uuid.Nil {
 		// Get customer user to get email
 		err = s.db.Where("id = ?", customer.UserID).First(&user).Error
 		if err == nil && user.Email != "" {
-			// Send email to customer
 			log.Printf("[NOTIFY_CLOSED] Sending closure email to customer %s at %s", user.Name, user.Email)
-			closureDate := time.Now().Format("Jan 2, 2006 at 3:04 PM")
+			closureDate := time.Now().Format("02 Jan 2006, 3:04 PM")
+			name := user.Name
+			if name == "" {
+				name = customer.Name
+			}
+			if name == "" {
+				name = "Customer"
+			}
 			emailHTML := utils.TicketClosureEmailTemplate(
-				user.Name,
+				name,
 				ticket.ID,
 				ticket.Title,
 				engineerName,
 				closureDate,
 				supportComment,
-				"https://dashboard.example.com/tickets/"+ticket.ID,
+				s.customerTicketURL(ticket.ID),
 			)
 
 			if s.mailer != nil {
-				// Send email synchronously with error handling
-				emailSubject := "Your Support Ticket #" + ticket.ID + " Has Been Resolved"
+				emailSubject := "Your support ticket #" + ticket.ID + " has been resolved"
 				if sendErr := s.mailer.Send(user.Email, emailSubject, emailHTML); sendErr != nil {
 					log.Printf("[EMAIL_ERROR] Failed to send closure email to customer %s: %v", user.Email, sendErr)
 				} else {
-					log.Printf("[EMAIL_SENT] ✓ Closure email sent to customer %s", user.Email)
+					log.Printf("[EMAIL_SENT] Closure email sent to customer %s", user.Email)
 				}
 			} else {
 				log.Printf("[MAILER_WARN] Mailer not configured, skipping email send")
@@ -529,15 +602,15 @@ func (s *NotificationService) NotifyTicketClosed(
 
 	// Notify support engineer (if assigned) about closure
 	if ticket.EngineerID != nil && *ticket.EngineerID != uuid.Nil {
-		engineer, err := s.userRepo.GetByID(*ticket.EngineerID)
-		if err == nil && engineer != nil {
+		var eng models.SupportEngineer
+		if err := s.db.Where("id = ?", *ticket.EngineerID).First(&eng).Error; err == nil && eng.UserID != uuid.Nil {
 			engineerMsg := fmt.Sprintf(
-				"Your ticket '%s' has been closed. Support comment: %s",
+				"Ticket '%s' has been closed. Support comment: %s",
 				ticket.Title,
 				supportComment,
 			)
 			if err := s.CreateTicketNotification(
-				*ticket.EngineerID,
+				eng.UserID,
 				ticketID,
 				models.NotificationTypeTicketClosed,
 				"Ticket Closed",
@@ -547,7 +620,7 @@ func (s *NotificationService) NotifyTicketClosed(
 			); err != nil {
 				log.Printf("[NOTIFY_CLOSED_ERROR] Failed to notify engineer: %v", err)
 			} else {
-				log.Printf("[NOTIFICATION_CREATED] engineer user_id=%s ticket_id=%s type=ticket_closed", ticket.EngineerID, ticketID)
+				log.Printf("[NOTIFICATION_CREATED] engineer user_id=%s ticket_id=%s type=ticket_closed", eng.UserID, ticketID)
 			}
 		}
 	}
