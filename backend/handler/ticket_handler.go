@@ -48,6 +48,7 @@ type AdminAssignTicketRequest struct {
 	Priority           models.TicketPriority  `json:"priority" binding:"required"`
 	SupportMode        models.SupportMode     `json:"support_mode" binding:"required"`
 	ServiceCallType    models.ServiceCallType `json:"service_call_type" binding:"required"`
+	AssetID            *uuid.UUID             `json:"asset_id"`
 }
 
 func (h *TicketHandler) CreateTicket(c *gin.Context) {
@@ -92,6 +93,7 @@ type AdminCreateTicketRequest struct {
 	EngineerID  uuid.UUID             `json:"engineer_id" binding:"required"`
 	Priority    models.TicketPriority `json:"priority" binding:"required"`
 	SupportMode models.SupportMode    `json:"support_mode" binding:"required"`
+	AssetID     *uuid.UUID            `json:"asset_id"`
 }
 
 func (h *TicketHandler) AdminCreateTicket(c *gin.Context) {
@@ -112,6 +114,7 @@ func (h *TicketHandler) AdminCreateTicket(c *gin.Context) {
 		req.Priority,
 		req.SupportMode,
 		adminID,
+		req.AssetID,
 	)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to create ticket"})
@@ -134,6 +137,7 @@ type AssignTicketRequest struct {
 	Priority           models.TicketPriority  `json:"priority" binding:"required"`
 	SupportMode        models.SupportMode     `json:"support_mode" binding:"required"`
 	ServiceCallType    models.ServiceCallType `json:"service_call_type" binding:"required"`
+	AssetID            *uuid.UUID             `json:"asset_id"`
 }
 
 func (h *TicketHandler) AssignTicket(c *gin.Context) {
@@ -153,6 +157,7 @@ func (h *TicketHandler) AssignTicket(c *gin.Context) {
 		req.Priority,
 		req.SupportMode,
 		req.ServiceCallType,
+		req.AssetID,
 	); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 		return
@@ -299,6 +304,7 @@ type AdminCreateTicketAndAssignRequest struct {
 	EngineerID         uuid.UUID             `json:"engineer_id" binding:"required"`
 	Priority           models.TicketPriority `json:"priority" binding:"required"`
 	SupportMode        models.SupportMode    `json:"support_mode" binding:"required"`
+	AssetID            *uuid.UUID            `json:"asset_id"`
 }
 
 func (h *TicketHandler) AdminCreateTicketAndAssign(c *gin.Context) {
@@ -319,6 +325,7 @@ func (h *TicketHandler) AdminCreateTicketAndAssign(c *gin.Context) {
 		req.Priority,
 		req.SupportMode,
 		adminID,
+		req.AssetID,
 	)
 
 	if err != nil {

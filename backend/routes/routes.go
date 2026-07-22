@@ -43,6 +43,7 @@ func SetupRoutes(
 	contractHandler *handler.ContractHandler,
 	amcHandler *handler.AMCAssignmentHandler,
 	auditHandler *handler.AuditHandler,
+	assetHandler *handler.AssetHandler,
 ) {
 	// Security middleware is applied once in bootstrap (CORS + headers + audit).
 
@@ -98,6 +99,7 @@ func SetupRoutes(
 			Solution:          solutionHandler,
 			CustomerSolution:  customerSolutionHandler,
 			SupportEngineer:   supportEngineerHandler,
+			Asset:             assetHandler,
 		}
 		amcHandlers := modamc.Handlers{Contract: contractHandler, AMC: amcHandler}
 

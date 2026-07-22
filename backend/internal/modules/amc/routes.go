@@ -24,6 +24,7 @@ func RegisterAdmin(admin *gin.RouterGroup, h Handlers) {
 	admin.PUT("/amc-assignments/:id", h.AMC.UpdateAMCAssignment)
 	admin.DELETE("/amc-assignments/:id", h.AMC.DeleteAMCAssignment)
 	admin.GET("/amc-assignments/:id/proofs", h.AMC.GetVisitProofs)
+	admin.PUT("/amc-visits/:visit_id/reschedule", h.AMC.RescheduleVisit)
 }
 
 // RegisterSupport mounts engineer AMC visit routes.

@@ -181,15 +181,26 @@ func (s *TicketService) CustomerCreateTicket(
 		return nil, errors.New("failed to generate ticket ID")
 	}
 
+	priority := models.PriorityStandard
+	serviceType := models.ServiceCallType("")
+	if linkedSolution != nil {
+		serviceType = models.ServiceCallType(linkedSolution.ContractType)
+	}
+	slaHours, targetAt := ComputeSLATarget(priority, serviceType, now)
+
 	ticket := &models.Ticket{
-		ID:          ticketID,
-		CustomerID:  customer.ID,
-		Title:       title,
-		Description: description,
-		Status:      models.StatusOpen,
-		CreatedBy:   userID,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		ID:              ticketID,
+		CustomerID:      customer.ID,
+		Title:           title,
+		Description:     description,
+		Status:          models.StatusOpen,
+		Priority:        priority,
+		ServiceCallType: serviceType,
+		SLAHours:        slaHours,
+		TargetAt:        &targetAt,
+		CreatedBy:       userID,
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}
 	if linkedSolution != nil {
 		ticket.CustomerSolutionID = &linkedSolution.ID
@@ -286,11 +297,15 @@ func (s *TicketService) AssignTicket(
 			return err
 		}
 
+		slaHours, targetAt := ComputeSLATarget(priority, serviceType, now)
+
 		if err := repo.UpdateFields(ticketID, map[string]interface{}{
 			"engineer_id":       engineerID,
 			"priority":          priority,
 			"support_mode":      supportMode,
 			"service_call_type": serviceType,
+			"sla_hours":         slaHours,
+			"target_at":         targetAt,
 			"status":            models.StatusAssigned,
 			"updated_at":        now,
 		}); err != nil {
@@ -633,6 +648,7 @@ func (s *TicketService) AdminCreateTicketAndAssign(
 	priority models.TicketPriority,
 	supportMode models.SupportMode,
 	adminID uuid.UUID,
+	assetID *uuid.UUID,
 ) (*models.Ticket, error) {
 
 	var ticket *models.Ticket
@@ -648,12 +664,9 @@ func (s *TicketService) AdminCreateTicketAndAssign(
 			return errors.New("solution does not belong to customer")
 		}
 
-		slaHours := 72
-		if cs.ContractType == models.ContractAMC {
-			slaHours = 24
-		}
-
-		targetAt := time.Now().Add(time.Duration(slaHours) * time.Hour)
+		serviceCallType := models.ServiceCallType(cs.ContractType)
+		now := time.Now()
+		slaHours, targetAt := ComputeSLATarget(priority, serviceCallType, now)
 
 		// Generate custom ticket ID
 		ticketID, err := s.ticketRepo.GenerateNextTicketID()
@@ -665,18 +678,19 @@ func (s *TicketService) AdminCreateTicketAndAssign(
 			ID:                 ticketID,
 			CustomerID:         customerID,
 			CustomerSolutionID: &cs.ID,
+			AssetID:            assetID,
 			EngineerID:         &engineerID,
 			Title:              title,
 			Description:        description,
 			Status:             models.StatusAssigned,
 			Priority:           priority,
 			SupportMode:        supportMode,
-			ServiceCallType:    models.ServiceCallType(cs.ContractType),
+			ServiceCallType:    serviceCallType,
 			SLAHours:           slaHours,
 			TargetAt:           &targetAt,
 			CreatedBy:          adminID,
-			CreatedAt:          time.Now(),
-			UpdatedAt:          time.Now(),
+			CreatedAt:          now,
+			UpdatedAt:          now,
 		}
 
 		if err := s.ticketRepo.CreateTx(tx, ticket); err != nil {
@@ -692,7 +706,6 @@ func (s *TicketService) AdminCreateTicketAndAssign(
 			return err
 		}
 
-		now := time.Now()
 		if err := s.logTicketEventTx(tx, &models.TicketEvent{
 			TicketID:    ticket.ID,
 			EventType:   models.TicketEventCreated,
@@ -733,6 +746,7 @@ func (s *TicketService) AdminAssignTicket(
 	priority models.TicketPriority,
 	supportMode models.SupportMode,
 	serviceCallType models.ServiceCallType,
+	assetID *uuid.UUID,
 ) error {
 	log.Printf("[ADMIN_ASSIGN_TICKET] Starting - ticketID=%s engineerID=%s", ticketID, engineerID)
 
@@ -759,17 +773,10 @@ func (s *TicketService) AdminAssignTicket(
 			return errors.New("invalid customer solution")
 		}
 
-		// SLA logic
-		slaHours := 72
-		if serviceCallType == models.ServiceTypeAMC {
-			slaHours = 24
-		}
+		now := time.Now()
+		slaHours, targetAt := ComputeSLATarget(priority, serviceCallType, now)
 
-		targetAt := time.Now().Add(time.Duration(slaHours) * time.Hour)
-
-		// Update ticket
-		log.Printf("[ADMIN_ASSIGN_TICKET] Updating ticket status to Assigned")
-		if err := repo.UpdateFields(ticketID, map[string]interface{}{
+		fields := map[string]interface{}{
 			"customer_solution_id": cs.ID,
 			"engineer_id":          engineerID,
 			"service_call_type":    serviceCallType,
@@ -778,8 +785,15 @@ func (s *TicketService) AdminAssignTicket(
 			"sla_hours":            slaHours,
 			"target_at":            targetAt,
 			"status":               models.StatusAssigned,
-			"updated_at":           time.Now(),
-		}); err != nil {
+			"updated_at":           now,
+		}
+		if assetID != nil {
+			fields["asset_id"] = *assetID
+		}
+
+		// Update ticket
+		log.Printf("[ADMIN_ASSIGN_TICKET] Updating ticket status to Assigned")
+		if err := repo.UpdateFields(ticketID, fields); err != nil {
 			log.Printf("[ADMIN_ASSIGN_TICKET_ERROR] Failed to update ticket: %v", err)
 			return err
 		}
@@ -798,7 +812,6 @@ func (s *TicketService) AdminAssignTicket(
 			return err
 		}
 
-		now := time.Now()
 		if err := repo.CreateStatusHistory(&models.TicketStatusHistory{
 			TicketID:  ticketID,
 			OldStatus: string(ticket.Status),

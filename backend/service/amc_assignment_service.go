@@ -139,6 +139,56 @@ func (s *AMCAssignmentService) CompleteVisit(visitID uuid.UUID, visitDate time.T
 }
 
 /* =========================
+   OVERDUE + RESCHEDULE
+========================= */
+
+// MarkOverdueVisits sets pending visits past their scheduled date to overdue and notifies engineers.
+func (s *AMCAssignmentService) MarkOverdueVisits() (int, error) {
+	now := time.Now()
+	endOfToday := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	visits, err := s.repo.ListPendingPastDue(endOfToday)
+	if err != nil {
+		return 0, err
+	}
+
+	marked := 0
+	for _, visit := range visits {
+		if err := s.repo.UpdateVisit(visit.ID, map[string]interface{}{
+			"status": "overdue",
+		}); err != nil {
+			continue
+		}
+		marked++
+		if s.notificationService != nil && visit.AMCAssignment != nil {
+			s.notificationService.NotifyVisitOverdue(
+				visit.AMCAssignment.SupportEngineerID,
+				visit.ID,
+				visit.VisitScheduledFor,
+			)
+		}
+	}
+	return marked, nil
+}
+
+// RescheduleVisit moves a pending/overdue visit to a new scheduled date (back to pending).
+func (s *AMCAssignmentService) RescheduleVisit(visitID uuid.UUID, scheduledFor time.Time) (*models.AMCVisit, error) {
+	visit, err := s.repo.GetVisit(visitID)
+	if err != nil {
+		return nil, err
+	}
+	if visit.Status == "completed" {
+		return nil, errors.New("cannot reschedule a completed visit")
+	}
+	if err := s.repo.UpdateVisit(visitID, map[string]interface{}{
+		"visit_scheduled_for": scheduledFor,
+		"status":              "pending",
+	}); err != nil {
+		return nil, err
+	}
+	return s.repo.GetVisit(visitID)
+}
+
+/* =========================
    ADD PROOF/IMAGES
 ========================= */
 func (s *AMCAssignmentService) AddVisitProof(proof *models.AMCVisitProof) error {

@@ -18,12 +18,14 @@ type Handlers struct {
 	Solution          *handler.SolutionHandler
 	CustomerSolution  *handler.CustomerSolutionHandler
 	SupportEngineer   *handler.SupportEngineerHandler
+	Asset             *handler.AssetHandler
 }
 
 // RegisterAdmin mounts company/customer/solution admin routes.
 func RegisterAdmin(admin *gin.RouterGroup, h Handlers) {
 	admin.GET("/dashboard", h.AdminDashboard.Dashboard)
 	admin.GET("/dashboard/tickets", h.AdminDashboard.GetDashboardTickets)
+	admin.GET("/ops-kpis", h.AdminDashboard.OpsKPIs)
 
 	admin.POST("/companies", h.Company.CreateCompany)
 	admin.GET("/companies", h.Company.GetCompanies)
@@ -43,6 +45,12 @@ func RegisterAdmin(admin *gin.RouterGroup, h Handlers) {
 	admin.GET("/customer-solutions", h.CustomerSolution.GetAllCustomerSolutions)
 	admin.PUT("/customer-solutions/:id", h.CustomerSolution.UpdateCustomerSolution)
 	admin.DELETE("/customer-solutions/:id", h.CustomerSolution.DeleteCustomerSolution)
+
+	admin.POST("/assets", h.Asset.Create)
+	admin.GET("/assets", h.Asset.List)
+	admin.GET("/assets/:id", h.Asset.Get)
+	admin.PUT("/assets/:id", h.Asset.Update)
+	admin.DELETE("/assets/:id", h.Asset.Delete)
 }
 
 // RegisterSupport mounts support dashboard routes owned by CRM.

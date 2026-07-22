@@ -39,31 +39,22 @@ type SLAStatus struct {
 	HoursOverdue   int
 }
 
-// GetSLAForPriority returns SLA hours based on priority
+// GetSLAForPriority is kept for callers; prefer ResolveSLAHours with service type.
 func GetSLAForPriority(priority string) int {
-	switch priority {
-	case "Low":
-		return 10 * 24 // 10 days
-	case "Standard":
-		return 5 * 24 // 5 days
-	case "Critical":
-		return 2 * 24 // 2 days
-	default:
-		return 10 * 24 // Default to 10 days
-	}
+	return ResolveSLAHours(models.TicketPriority(priority), "")
 }
 
-// CheckTicketSLA checks a single ticket for SLA violations
+// CheckTicketSLA checks a single ticket for SLA violations using stored target_at.
 func (s *SLAEscalationService) CheckTicketSLA(ctx context.Context, ticket *models.Ticket) (*SLAStatus, error) {
-	slaHours := GetSLAForPriority(string(ticket.Priority))
+	now := time.Now()
+	targetAt, slaHours := EffectiveSLATarget(ticket, now)
 
-	createdTime := ticket.CreatedAt
-	currentTime := time.Now()
-
-	elapsedTime := currentTime.Sub(createdTime)
-	elapsedHours := int(elapsedTime.Hours())
-
-	remainingHours := slaHours - elapsedHours
+	remaining := targetAt.Sub(now)
+	remainingHours := int(remaining.Hours())
+	elapsedHours := slaHours - remainingHours
+	if elapsedHours < 0 {
+		elapsedHours = 0
+	}
 
 	status := "OnTrack"
 	isBreached := false
@@ -73,6 +64,9 @@ func (s *SLAEscalationService) CheckTicketSLA(ctx context.Context, ticket *model
 		status = "Breached"
 		isBreached = true
 		hoursOverdue = -remainingHours
+		if hoursOverdue < 0 {
+			hoursOverdue = int(now.Sub(targetAt).Hours())
+		}
 	} else if remainingHours <= slaHours/4 {
 		status = "Critical"
 	} else if remainingHours <= slaHours/2 {
@@ -232,15 +226,18 @@ func (s *SLAEscalationService) notifySLABreach(ctx context.Context, ticket *mode
 
 // GetSLAStatus returns the current SLA status for a ticket
 func (s *SLAEscalationService) GetSLAStatus(ctx context.Context, ticketID string) (string, error) {
-	// Get ticket and check SLA status
-	return "active", nil
+	var ticket models.Ticket
+	if err := s.db.WithContext(ctx).Where("id = ?", ticketID).First(&ticket).Error; err != nil {
+		return "", err
+	}
+	status, err := s.CheckTicketSLA(ctx, &ticket)
+	if err != nil {
+		return "", err
+	}
+	return status.Status, nil
 }
 
-// EscalateTicket escalates a ticket due to SLA violation
+// EscalateTicket records an escalation notification marker (status stays on ticket lifecycle).
 func (s *SLAEscalationService) EscalateTicket(ctx context.Context, ticketID string) error {
-	return s.db.WithContext(ctx).
-		Model(map[string]interface{}{}).
-		Where("id = ?", ticketID).
-		Update("status", "Escalated").
-		Error
+	return s.escalationRepo.Create(ticketID)
 }

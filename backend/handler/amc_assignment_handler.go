@@ -265,6 +265,34 @@ func (h *AMCAssignmentHandler) GetVisitProofs(c *gin.Context) {
 
 /*
 	=========================
+	  ADMIN: RESCHEDULE VISIT
+=========================
+*/
+func (h *AMCAssignmentHandler) RescheduleVisit(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("visit_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid visit id"})
+		return
+	}
+
+	var req struct {
+		VisitScheduledFor time.Time `json:"visit_scheduled_for" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "visit_scheduled_for is required"})
+		return
+	}
+
+	visit, err := h.service.RescheduleVisit(id, req.VisitScheduledFor)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, visit)
+}
+
+/*
+	=========================
 	  ADMIN: UPDATE AMC ASSIGNMENT
 
 =========================

@@ -31,6 +31,7 @@ func Migrate(db *gorm.DB) {
 		========================= */
 		&models.Solution{},
 		&models.CustomerSolution{}, // PO + AMC/Warranty lives here
+		&models.Asset{},
 
 		/* =========================
 		   TICKETING SYSTEM

@@ -20,6 +20,10 @@ func (s *AdminService) GetDashboardStats() (map[string]int64, error) {
 	return s.repo.FetchAdminStats()
 }
 
+func (s *AdminService) GetOpsKPIs(windowDays int) (*repository.OpsKPIs, error) {
+	return s.repo.FetchOpsKPIs(windowDays)
+}
+
 func (s *AdminService) GetDashboardTickets(
 	companyID *string,
 	contractType *string,

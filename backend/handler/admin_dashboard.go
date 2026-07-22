@@ -29,6 +29,16 @@ func (h *AdminDashboardHandler) Dashboard(c *gin.Context) {
 	c.JSON(http.StatusOK, stats)
 }
 
+func (h *AdminDashboardHandler) OpsKPIs(c *gin.Context) {
+	days, _ := strconv.Atoi(c.DefaultQuery("days", "90"))
+	kpis, err := h.service.GetOpsKPIs(days)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load ops KPIs"})
+		return
+	}
+	c.JSON(http.StatusOK, kpis)
+}
+
 func (h *AdminDashboardHandler) GetDashboardTickets(c *gin.Context) {
 	// Query parameters
 	company := c.Query("company")

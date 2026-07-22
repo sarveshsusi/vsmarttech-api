@@ -179,6 +179,16 @@ func (r *AMCAssignmentRepository) UpdateVisit(id uuid.UUID, updates map[string]i
 	return r.db.Model(&models.AMCVisit{}).Where("id = ?", id).Updates(updates).Error
 }
 
+// ListPendingPastDue returns pending visits whose scheduled date is before endOfDay.
+func (r *AMCAssignmentRepository) ListPendingPastDue(before time.Time) ([]models.AMCVisit, error) {
+	var visits []models.AMCVisit
+	err := r.db.
+		Preload("AMCAssignment").
+		Where("status = ? AND visit_scheduled_for < ?", "pending", before).
+		Find(&visits).Error
+	return visits, err
+}
+
 // GetVisitsByAssignment retrieves all visits for an assignment
 func (r *AMCAssignmentRepository) GetVisitsByAssignment(assignmentID uuid.UUID) ([]models.AMCVisit, error) {
 	var visits []models.AMCVisit

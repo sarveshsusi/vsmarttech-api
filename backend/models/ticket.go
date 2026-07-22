@@ -56,6 +56,9 @@ type Ticket struct {
 	CustomerSolutionID *uuid.UUID        `gorm:"type:uuid;index" json:"customer_solution_id,omitempty"`
 	CustomerSolution   *CustomerSolution `gorm:"foreignKey:CustomerSolutionID" json:"customer_solution,omitempty"`
 
+	AssetID *uuid.UUID `gorm:"type:uuid;index" json:"asset_id,omitempty"`
+	Asset   *Asset     `gorm:"foreignKey:AssetID" json:"asset,omitempty"`
+
 	// ✅ ASSIGNED ENGINEER (SNAPSHOT)
 	EngineerID      *uuid.UUID       `gorm:"type:uuid;index" json:"engineer_id,omitempty"`
 	SupportEngineer *SupportEngineer `gorm:"foreignKey:EngineerID" json:"support_engineer,omitempty"`

@@ -23,6 +23,7 @@ type App struct {
 	DB                    *gorm.DB
 	Engine                *gin.Engine
 	ContractExpiryService *service.ContractExpiryService
+	AMCAssignmentService  *service.AMCAssignmentService
 	SLAEscalationCron     *jobs.SLAEscalationCron
 	Mailer                *utils.Mailer
 }
@@ -129,6 +130,7 @@ func wireHTTP(
 	feedbackService := service.NewFeedbackService(feedbackRepo)
 	supportEngineerService := service.NewSupportEngineerService(supportEngineerRepo)
 	amcService := service.NewAMCAssignmentService(amcRepo, notificationService, customerSolutionRepo)
+	app.AMCAssignmentService = amcService
 
 	imageUploader, err := utils.NewS3Uploader(cfg)
 	if err != nil {
@@ -143,6 +145,9 @@ func wireHTTP(
 	customerHandler := handler.NewCustomerHandler(customerService)
 	solutionHandler := handler.NewSolutionHandler(solutionService)
 	customerSolutionHandler := handler.NewCustomerSolutionHandler(customerSolutionService)
+	assetRepo := repository.NewAssetRepository(db)
+	assetService := service.NewAssetService(assetRepo, customerSolutionRepo, companyRepo)
+	assetHandler := handler.NewAssetHandler(assetService)
 	ticketHandler := handler.NewTicketHandler(ticketService, imageUploader)
 	feedbackHandler := handler.NewFeedbackHandler(feedbackService)
 	supportEngineerHandler := handler.NewSupportEngineerHandler(supportEngineerService, supportService)
@@ -191,6 +196,7 @@ func wireHTTP(
 		contractHandler,
 		amcHandler,
 		auditHandler,
+		assetHandler,
 	)
 	app.Engine = r
 	return nil
@@ -204,6 +210,16 @@ func StartInProcessCrons(app *App) {
 		log.Printf("failed to start SLA escalation cron: %v", err)
 	} else {
 		log.Println("SLA escalation cron started in-process")
+	}
+	if app.AMCAssignmentService != nil {
+		jobs.NewAMCVisitOverdueCron(app.AMCAssignmentService).Start()
+		log.Println("AMC visit overdue cron started in-process")
+	} else {
+		// Workers without full HTTP wire: build a minimal AMC service for overdue marking.
+		amcRepo := repository.NewAMCAssignmentRepository(app.DB)
+		amcSvc := service.NewAMCAssignmentService(amcRepo, nil, nil)
+		jobs.NewAMCVisitOverdueCron(amcSvc).Start()
+		log.Println("AMC visit overdue cron started in-process (minimal)")
 	}
 	log.Println("contract expiry cron started in-process")
 }

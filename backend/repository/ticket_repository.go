@@ -67,6 +67,11 @@ func (r *TicketRepository) GetByID(id string) (*models.Ticket, error) {
 		Preload("Attachments").
 		Preload("SupportEngineer").
 		Preload("SupportEngineer.User").
+		Preload("Asset").
+		Preload("CustomerSolution").
+		Preload("Customer", func(db *gorm.DB) *gorm.DB {
+			return db.Preload("Company")
+		}).
 		First(&ticket, "id = ?", id).Error
 	return &ticket, err
 }
@@ -79,6 +84,7 @@ func (r *TicketRepository) GetAll() ([]models.Ticket, error) {
 		}).
 		Preload("CustomerSolution").
 		Preload("CustomerSolution.Solution").
+		Preload("Asset").
 		Preload("Attachments").
 		Preload("SupportEngineer").
 		Preload("SupportEngineer.User").
