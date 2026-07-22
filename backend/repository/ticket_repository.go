@@ -61,6 +61,52 @@ func (r *TicketRepository) GenerateNextTicketID() (string, error) {
    GETTERS
 ====================== */
 
+// FindLatestOpenByAssetIDs returns the newest non-closed ticket per asset ID.
+func (r *TicketRepository) FindLatestOpenByAssetIDs(assetIDs []uuid.UUID) (map[uuid.UUID]models.Ticket, error) {
+	result := make(map[uuid.UUID]models.Ticket)
+	if len(assetIDs) == 0 {
+		return result, nil
+	}
+
+	var tickets []models.Ticket
+	err := r.db.
+		Where("asset_id IN ? AND status <> ?", assetIDs, models.StatusClosed).
+		Order("created_at DESC").
+		Find(&tickets).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, t := range tickets {
+		if t.AssetID == nil {
+			continue
+		}
+		if _, exists := result[*t.AssetID]; exists {
+			continue
+		}
+		result[*t.AssetID] = t
+	}
+	return result, nil
+}
+
+// ListOpenByCompanyID returns non-closed tickets for customers under a company.
+func (r *TicketRepository) ListOpenByCompanyID(companyID uuid.UUID) ([]models.Ticket, error) {
+	var tickets []models.Ticket
+	err := r.db.Model(&models.Ticket{}).
+		Joins("JOIN customers ON customers.id = tickets.customer_id").
+		Where("customers.company_id = ? AND tickets.status <> ?", companyID, models.StatusClosed).
+		Order("tickets.updated_at DESC").
+		Limit(100).
+		Find(&tickets).Error
+	return tickets, err
+}
+
+// ClearAssetLinks removes asset_id from all open tickets pointing at the asset.
+func (r *TicketRepository) ClearAssetLinks(assetID uuid.UUID) error {
+	return r.db.Model(&models.Ticket{}).
+		Where("asset_id = ? AND status <> ?", assetID, models.StatusClosed).
+		Update("asset_id", nil).Error
+}
+
 func (r *TicketRepository) GetByID(id string) (*models.Ticket, error) {
 	var ticket models.Ticket
 	err := r.db.

@@ -48,9 +48,11 @@ func RegisterAdmin(admin *gin.RouterGroup, h Handlers) {
 
 	admin.POST("/assets", h.Asset.Create)
 	admin.GET("/assets", h.Asset.List)
+	admin.GET("/assets/open-tickets", h.Asset.ListOpenTickets)
 	admin.GET("/assets/:id", h.Asset.Get)
 	admin.PUT("/assets/:id", h.Asset.Update)
 	admin.PUT("/assets/:id/status", h.Asset.UpdateStatus)
+	admin.PUT("/assets/:id/link-ticket", h.Asset.LinkTicket)
 	admin.DELETE("/assets/:id", h.Asset.Delete)
 }
 

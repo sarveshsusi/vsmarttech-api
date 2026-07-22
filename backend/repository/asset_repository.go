@@ -20,6 +20,7 @@ type AssetListFilter struct {
 	CompanyID          string
 	CustomerSolutionID string
 	Status             string
+	Statuses           []string
 	Limit              int
 	Offset             int
 }
@@ -70,7 +71,20 @@ func (r *AssetRepository) List(filter AssetListFilter) ([]models.Asset, int64, e
 			q = q.Where("customer_solution_id = ?", uid)
 		}
 	}
-	if filter.Status != "" {
+	if len(filter.Statuses) > 0 {
+		expanded := make([]string, 0, len(filter.Statuses)+3)
+		for _, st := range filter.Statuses {
+			expanded = append(expanded, st)
+			if st == string(models.AssetStatusAtSite) {
+				expanded = append(expanded,
+					string(models.AssetStatusActive),
+					string(models.AssetStatusInactive),
+					"",
+				)
+			}
+		}
+		q = q.Where("status IN ?", expanded)
+	} else if filter.Status != "" {
 		if filter.Status == string(models.AssetStatusAtSite) {
 			q = q.Where("status IN ?", []string{
 				string(models.AssetStatusAtSite),

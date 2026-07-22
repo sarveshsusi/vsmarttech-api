@@ -146,7 +146,7 @@ func wireHTTP(
 	solutionHandler := handler.NewSolutionHandler(solutionService)
 	customerSolutionHandler := handler.NewCustomerSolutionHandler(customerSolutionService)
 	assetRepo := repository.NewAssetRepository(db)
-	assetService := service.NewAssetService(assetRepo, customerSolutionRepo, companyRepo)
+	assetService := service.NewAssetService(assetRepo, ticketRepo, customerSolutionRepo, companyRepo)
 	assetHandler := handler.NewAssetHandler(assetService)
 	ticketHandler := handler.NewTicketHandler(ticketService, imageUploader)
 	feedbackHandler := handler.NewFeedbackHandler(feedbackService)

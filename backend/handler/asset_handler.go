@@ -134,11 +134,23 @@ func (h *AssetHandler) List(c *gin.Context) {
 	if page < 1 {
 		page = 1
 	}
+
+	var statuses []string
+	if raw := strings.TrimSpace(c.Query("statuses")); raw != "" {
+		for _, part := range strings.Split(raw, ",") {
+			part = strings.TrimSpace(part)
+			if part != "" {
+				statuses = append(statuses, part)
+			}
+		}
+	}
+
 	rows, total, err := h.service.List(repository.AssetListFilter{
 		Search:             c.Query("search"),
 		CompanyID:          c.Query("company_id"),
 		CustomerSolutionID: c.Query("customer_solution_id"),
 		Status:             c.Query("status"),
+		Statuses:           statuses,
 		Limit:              pageSize,
 		Offset:             (page - 1) * pageSize,
 	})
@@ -187,6 +199,41 @@ func (h *AssetHandler) UpdateStatus(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, asset)
+}
+
+func (h *AssetHandler) LinkTicket(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid asset id"})
+		return
+	}
+	var body struct {
+		TicketID string `json:"ticket_id"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+	linked, err := h.service.LinkTicket(id, body.TicketID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"linked_ticket": linked})
+}
+
+func (h *AssetHandler) ListOpenTickets(c *gin.Context) {
+	companyID, err := uuid.Parse(strings.TrimSpace(c.Query("company_id")))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "company_id is required"})
+		return
+	}
+	rows, err := h.service.ListOpenTicketsForCompany(companyID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": rows})
 }
 
 func (h *AssetHandler) Delete(c *gin.Context) {
