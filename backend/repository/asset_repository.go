@@ -71,7 +71,16 @@ func (r *AssetRepository) List(filter AssetListFilter) ([]models.Asset, int64, e
 		}
 	}
 	if filter.Status != "" {
-		q = q.Where("status = ?", filter.Status)
+		if filter.Status == string(models.AssetStatusAtSite) {
+			q = q.Where("status IN ?", []string{
+				string(models.AssetStatusAtSite),
+				string(models.AssetStatusActive),
+				string(models.AssetStatusInactive),
+				"",
+			})
+		} else {
+			q = q.Where("status = ?", filter.Status)
+		}
 	}
 
 	var total int64

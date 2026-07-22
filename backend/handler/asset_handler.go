@@ -168,6 +168,27 @@ func (h *AssetHandler) Get(c *gin.Context) {
 	c.JSON(http.StatusOK, asset)
 }
 
+func (h *AssetHandler) UpdateStatus(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid asset id"})
+		return
+	}
+	var body struct {
+		Status string `json:"status" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "status is required"})
+		return
+	}
+	asset, err := h.service.UpdateStatus(id, models.AssetStatus(body.Status))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, asset)
+}
+
 func (h *AssetHandler) Delete(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {

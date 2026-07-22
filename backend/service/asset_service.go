@@ -64,9 +64,9 @@ func (s *AssetService) Create(adminID uuid.UUID, in AssetInput) (*models.Asset, 
 		customerID = in.CustomerID
 	}
 
-	status := in.Status
-	if status == "" {
-		status = models.AssetStatusActive
+	status := models.NormalizeAssetStatus(in.Status)
+	if in.Status != "" && !models.IsValidAssetStatus(in.Status) {
+		return nil, errors.New("invalid asset status")
 	}
 
 	now := time.Now()
@@ -121,7 +121,10 @@ func (s *AssetService) Update(id uuid.UUID, in AssetInput) (*models.Asset, error
 	asset.SiteLocation = strings.TrimSpace(in.SiteLocation)
 	asset.Notes = strings.TrimSpace(in.Notes)
 	if in.Status != "" {
-		asset.Status = in.Status
+		if !models.IsValidAssetStatus(in.Status) {
+			return nil, errors.New("invalid asset status")
+		}
+		asset.Status = models.NormalizeAssetStatus(in.Status)
 	}
 	asset.InstalledAt = in.InstalledAt
 	asset.CustomerSolutionID = in.CustomerSolutionID
@@ -141,6 +144,22 @@ func (s *AssetService) Update(id uuid.UUID, in AssetInput) (*models.Asset, error
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {
 			return nil, errors.New("serial number already exists")
 		}
+		return nil, err
+	}
+	return s.repo.GetByID(id)
+}
+
+func (s *AssetService) UpdateStatus(id uuid.UUID, status models.AssetStatus) (*models.Asset, error) {
+	if !models.IsValidAssetStatus(status) {
+		return nil, errors.New("invalid asset status")
+	}
+	asset, err := s.repo.GetByID(id)
+	if err != nil {
+		return nil, errors.New("asset not found")
+	}
+	asset.Status = models.NormalizeAssetStatus(status)
+	asset.UpdatedAt = time.Now()
+	if err := s.repo.Update(asset); err != nil {
 		return nil, err
 	}
 	return s.repo.GetByID(id)

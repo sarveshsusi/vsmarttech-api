@@ -9,10 +9,63 @@ import (
 type AssetStatus string
 
 const (
-	AssetStatusActive      AssetStatus = "Active"
-	AssetStatusInactive    AssetStatus = "Inactive"
+	AssetStatusAtSite         AssetStatus = "At Site"
+	AssetStatusCollected      AssetStatus = "Collected"
+	AssetStatusInWorkshop     AssetStatus = "In Workshop"
+	AssetStatusReadyToReturn  AssetStatus = "Ready to Return"
+	AssetStatusReturnedToSite AssetStatus = "Returned to Site"
 	AssetStatusDecommissioned AssetStatus = "Decommissioned"
+
+	// Legacy values still accepted when reading older rows.
+	AssetStatusActive   AssetStatus = "Active"
+	AssetStatusInactive AssetStatus = "Inactive"
 )
+
+// ValidAssetStatuses are material/service statuses used in the workshop flow.
+var ValidAssetStatuses = []AssetStatus{
+	AssetStatusAtSite,
+	AssetStatusCollected,
+	AssetStatusInWorkshop,
+	AssetStatusReadyToReturn,
+	AssetStatusReturnedToSite,
+	AssetStatusDecommissioned,
+}
+
+// NormalizeAssetStatus maps legacy statuses and blanks to the current set.
+func NormalizeAssetStatus(status AssetStatus) AssetStatus {
+	switch status {
+	case AssetStatusActive, AssetStatusInactive, "":
+		return AssetStatusAtSite
+	case AssetStatusAtSite,
+		AssetStatusCollected,
+		AssetStatusInWorkshop,
+		AssetStatusReadyToReturn,
+		AssetStatusReturnedToSite,
+		AssetStatusDecommissioned:
+		return status
+	default:
+		return AssetStatusAtSite
+	}
+}
+
+// IsValidAssetStatus reports whether status is an allowed write value
+// (including legacy Active/Inactive which normalize to At Site).
+func IsValidAssetStatus(status AssetStatus) bool {
+	switch status {
+	case AssetStatusAtSite,
+		AssetStatusCollected,
+		AssetStatusInWorkshop,
+		AssetStatusReadyToReturn,
+		AssetStatusReturnedToSite,
+		AssetStatusDecommissioned,
+		AssetStatusActive,
+		AssetStatusInactive,
+		"":
+		return true
+	default:
+		return false
+	}
+}
 
 // Asset is an installed device (camera, barrier, biometric, etc.)
 // linked to a company and optionally a PO / customer solution.
@@ -35,7 +88,7 @@ type Asset struct {
 	SiteLocation string `gorm:"type:varchar(255)" json:"site_location"`
 	Notes        string `gorm:"type:text" json:"notes"`
 
-	Status AssetStatus `gorm:"type:varchar(32);default:'Active'" json:"status"`
+	Status AssetStatus `gorm:"type:varchar(32);default:'At Site'" json:"status"`
 
 	InstalledAt *time.Time `json:"installed_at,omitempty"`
 	CreatedBy   uuid.UUID  `gorm:"type:uuid;not null" json:"created_by"`
