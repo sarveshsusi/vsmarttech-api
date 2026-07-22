@@ -122,3 +122,17 @@ func (r *AssetRepository) List(filter AssetListFilter) ([]models.Asset, int64, e
 		Find(&rows).Error
 	return rows, total, err
 }
+
+func (r *AssetRepository) CreateStatusHistory(h *models.AssetStatusHistory) error {
+	return r.db.Create(h).Error
+}
+
+func (r *AssetRepository) ListStatusHistory(assetID uuid.UUID) ([]models.AssetStatusHistory, error) {
+	var rows []models.AssetStatusHistory
+	err := r.db.
+		Where("asset_id = ?", assetID).
+		Order("changed_at DESC").
+		Limit(100).
+		Find(&rows).Error
+	return rows, err
+}

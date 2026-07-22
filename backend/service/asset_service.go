@@ -59,6 +59,37 @@ type AssetListItem struct {
 	LinkedTicket *LinkedTicketSummary `json:"linked_ticket,omitempty"`
 }
 
+func (s *AssetService) recordStatusChange(
+	assetID uuid.UUID,
+	oldStatus, newStatus models.AssetStatus,
+	changedBy uuid.UUID,
+	ticketID *string,
+) {
+	if models.NormalizeAssetStatus(oldStatus) == models.NormalizeAssetStatus(newStatus) {
+		return
+	}
+	_ = s.repo.CreateStatusHistory(&models.AssetStatusHistory{
+		AssetID:   assetID,
+		OldStatus: oldStatus,
+		NewStatus: models.NormalizeAssetStatus(newStatus),
+		TicketID:  ticketID,
+		ChangedBy: changedBy,
+		ChangedAt: time.Now(),
+	})
+}
+
+func (s *AssetService) linkedTicketIDPtr(assetID uuid.UUID) *string {
+	byAsset, err := s.ticketRepo.FindLatestOpenByAssetIDs([]uuid.UUID{assetID})
+	if err != nil {
+		return nil
+	}
+	if t, ok := byAsset[assetID]; ok {
+		id := t.ID
+		return &id
+	}
+	return nil
+}
+
 func (s *AssetService) Create(adminID uuid.UUID, in AssetInput) (*models.Asset, error) {
 	serial := strings.TrimSpace(in.SerialNumber)
 	name := strings.TrimSpace(in.Name)
@@ -108,10 +139,17 @@ func (s *AssetService) Create(adminID uuid.UUID, in AssetInput) (*models.Asset, 
 		}
 		return nil, err
 	}
+	_ = s.repo.CreateStatusHistory(&models.AssetStatusHistory{
+		AssetID:   asset.ID,
+		OldStatus: "",
+		NewStatus: status,
+		ChangedBy: adminID,
+		ChangedAt: now,
+	})
 	return s.repo.GetByID(asset.ID)
 }
 
-func (s *AssetService) Update(id uuid.UUID, in AssetInput) (*models.Asset, error) {
+func (s *AssetService) Update(id uuid.UUID, adminID uuid.UUID, in AssetInput) (*models.Asset, error) {
 	asset, err := s.repo.GetByID(id)
 	if err != nil {
 		return nil, errors.New("asset not found")
@@ -130,6 +168,7 @@ func (s *AssetService) Update(id uuid.UUID, in AssetInput) (*models.Asset, error
 		asset.CompanyID = in.CompanyID
 	}
 
+	oldStatus := asset.Status
 	asset.SerialNumber = serial
 	asset.Name = name
 	asset.Model = strings.TrimSpace(in.Model)
@@ -162,10 +201,13 @@ func (s *AssetService) Update(id uuid.UUID, in AssetInput) (*models.Asset, error
 		}
 		return nil, err
 	}
+	if models.NormalizeAssetStatus(oldStatus) != models.NormalizeAssetStatus(asset.Status) {
+		s.recordStatusChange(id, oldStatus, asset.Status, adminID, s.linkedTicketIDPtr(id))
+	}
 	return s.repo.GetByID(id)
 }
 
-func (s *AssetService) UpdateStatus(id uuid.UUID, status models.AssetStatus) (*models.Asset, error) {
+func (s *AssetService) UpdateStatus(id uuid.UUID, status models.AssetStatus, adminID uuid.UUID) (*models.Asset, error) {
 	if !models.IsValidAssetStatus(status) {
 		return nil, errors.New("invalid asset status")
 	}
@@ -173,12 +215,25 @@ func (s *AssetService) UpdateStatus(id uuid.UUID, status models.AssetStatus) (*m
 	if err != nil {
 		return nil, errors.New("asset not found")
 	}
-	asset.Status = models.NormalizeAssetStatus(status)
+	oldStatus := asset.Status
+	newStatus := models.NormalizeAssetStatus(status)
+	if models.NormalizeAssetStatus(oldStatus) == newStatus {
+		return s.repo.GetByID(id)
+	}
+	asset.Status = newStatus
 	asset.UpdatedAt = time.Now()
 	if err := s.repo.Update(asset); err != nil {
 		return nil, err
 	}
+	s.recordStatusChange(id, oldStatus, newStatus, adminID, s.linkedTicketIDPtr(id))
 	return s.repo.GetByID(id)
+}
+
+func (s *AssetService) ListStatusHistory(assetID uuid.UUID) ([]models.AssetStatusHistory, error) {
+	if _, err := s.repo.GetByID(assetID); err != nil {
+		return nil, errors.New("asset not found")
+	}
+	return s.repo.ListStatusHistory(assetID)
 }
 
 func (s *AssetService) GetByID(id uuid.UUID) (*models.Asset, error) {

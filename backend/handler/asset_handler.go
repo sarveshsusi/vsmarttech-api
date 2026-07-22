@@ -120,7 +120,8 @@ func (h *AssetHandler) Update(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid ids"})
 		return
 	}
-	asset, err := h.service.Update(id, in)
+	adminID := c.MustGet("user_id").(uuid.UUID)
+	asset, err := h.service.Update(id, adminID, in)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -193,12 +194,27 @@ func (h *AssetHandler) UpdateStatus(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "status is required"})
 		return
 	}
-	asset, err := h.service.UpdateStatus(id, models.AssetStatus(body.Status))
+	adminID := c.MustGet("user_id").(uuid.UUID)
+	asset, err := h.service.UpdateStatus(id, models.AssetStatus(body.Status), adminID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, asset)
+}
+
+func (h *AssetHandler) StatusHistory(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid asset id"})
+		return
+	}
+	rows, err := h.service.ListStatusHistory(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": rows})
 }
 
 func (h *AssetHandler) LinkTicket(c *gin.Context) {

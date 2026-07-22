@@ -99,3 +99,18 @@ type Asset struct {
 func (Asset) TableName() string {
 	return "assets"
 }
+
+// AssetStatusHistory records material-status changes for workshop timelines.
+type AssetStatusHistory struct {
+	ID        uuid.UUID   `json:"id" gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	AssetID   uuid.UUID   `json:"asset_id" gorm:"type:uuid;index;not null"`
+	OldStatus AssetStatus `json:"old_status" gorm:"type:varchar(32)"`
+	NewStatus AssetStatus `json:"new_status" gorm:"type:varchar(32);not null"`
+	TicketID  *string     `json:"ticket_id,omitempty" gorm:"type:varchar(20);index"`
+	ChangedBy uuid.UUID   `json:"changed_by" gorm:"type:uuid"`
+	ChangedAt time.Time   `json:"changed_at"`
+}
+
+func (AssetStatusHistory) TableName() string {
+	return "asset_status_histories"
+}
