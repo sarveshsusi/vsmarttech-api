@@ -174,7 +174,7 @@ func LoadConfig() *Config {
 		Server: ServerConfig{
 			Port:              getEnv("SERVER_PORT", "8080"),
 			Env:               env,
-			RateLimitMax:      getEnvAsInt("RATE_LIMIT_MAX", 60),
+			RateLimitMax:      getEnvAsInt("RATE_LIMIT_MAX", 300),
 			TrustedProxies:    getEnvCSV("TRUSTED_PROXIES", []string{"nginx", "172.16.0.0/12", "10.0.0.0/8"}),
 			RunInProcessCrons: getEnvAsBool("RUN_INPROCESS_CRONS", true),
 			CookieSameSite:    cookieSameSite,

@@ -80,8 +80,11 @@ func SetupRoutes(
 	protected.Use(middleware.AuthMiddleware(cfg, db))
 	rateLimit := cfg.Server.RateLimitMax
 	if rateLimit <= 0 {
-		rateLimit = 60
+		rateLimit = 300
 	}
+	// One per-user limit for all authenticated traffic (including admin).
+	// A second tighter admin limit caused dashboards to 429 under normal use,
+	// and IP-based keys meant whole offices shared one bucket behind NAT/CDN.
 	protected.Use(middleware.RateLimit(rateLimit))
 	{
 		modauth.RegisterProtected(protected, authHandler)
@@ -105,11 +108,6 @@ func SetupRoutes(
 
 		admin := protected.Group("/admin")
 		admin.Use(middleware.RequireRole(models.RoleAdmin))
-		adminLimit := rateLimit / 2
-		if adminLimit < 10 {
-			adminLimit = 10
-		}
-		admin.Use(middleware.RateLimit(adminLimit))
 		{
 			modauth.RegisterAdminUsers(admin, authHandler)
 			modcrm.RegisterAdmin(admin, crmHandlers)

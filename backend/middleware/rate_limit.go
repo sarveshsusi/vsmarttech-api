@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -13,19 +14,21 @@ type clientRequest struct {
 	resetTime time.Time
 }
 
+// RateLimit caps requests per minute. Authenticated requests are keyed by
+// user ID (set by AuthMiddleware) so office/NAT users do not share one IP bucket.
+// Unauthenticated routes fall back to ClientIP.
 func RateLimit(max int) gin.HandlerFunc {
 	var mu sync.Mutex
 	clients := make(map[string]*clientRequest)
 
-	// Clean up expired entries every minute
 	go func() {
 		for {
 			time.Sleep(time.Minute)
 			mu.Lock()
 			now := time.Now()
-			for ip, req := range clients {
+			for key, req := range clients {
 				if now.After(req.resetTime) {
-					delete(clients, ip)
+					delete(clients, key)
 				}
 			}
 			mu.Unlock()
@@ -33,17 +36,16 @@ func RateLimit(max int) gin.HandlerFunc {
 	}()
 
 	return func(c *gin.Context) {
-		ip := c.ClientIP()
+		key := rateLimitKey(c)
 
 		mu.Lock()
 		defer mu.Unlock()
 
 		now := time.Now()
-		req, exists := clients[ip]
+		req, exists := clients[key]
 
-		// If client doesn't exist or reset time has passed, create new entry
 		if !exists || now.After(req.resetTime) {
-			clients[ip] = &clientRequest{
+			clients[key] = &clientRequest{
 				count:     1,
 				resetTime: now.Add(time.Minute),
 			}
@@ -51,18 +53,38 @@ func RateLimit(max int) gin.HandlerFunc {
 			return
 		}
 
-		// Increment count
 		req.count++
 
-		// Check if exceeded limit
 		if req.count > max {
+			retryAfter := int(req.resetTime.Sub(now).Seconds())
+			if retryAfter < 1 {
+				retryAfter = 1
+			}
+			c.Header("Retry-After", fmt.Sprintf("%d", retryAfter))
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
 				"error":       "rate_limit_exceeded",
-				"retry_after": int(req.resetTime.Sub(now).Seconds()),
+				"retry_after": retryAfter,
 			})
 			return
 		}
 
 		c.Next()
 	}
+}
+
+func rateLimitKey(c *gin.Context) string {
+	if raw, ok := c.Get(CtxUserID); ok {
+		switch v := raw.(type) {
+		case string:
+			if v != "" {
+				return "user:" + v
+			}
+		case fmt.Stringer:
+			s := v.String()
+			if s != "" {
+				return "user:" + s
+			}
+		}
+	}
+	return "ip:" + c.ClientIP()
 }

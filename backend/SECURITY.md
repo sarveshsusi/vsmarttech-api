@@ -20,9 +20,10 @@
 - Every authenticated request re-loads `is_active` + role from the database (disabled accounts cannot keep using a JWT).
 - Refresh tokens: HttpOnly cookie, `SameSite=None` + `Secure` in production (cross-origin SPA), rotated on refresh.
 - Roles: `admin` | `support` | `customer`.
-- Login: rate-limited (10/min) + IP brute-force guard (5 fails → 15m lock).
+- Login: rate-limited (30/min) + IP brute-force guard (5 fails → 15m lock).
 - OTP verify / forgot-password / reset-password: rate-limited (5/min).
-- Refresh: rate-limited (30/min).
+- Refresh: rate-limited (60/min).
+- Authenticated API: `RATE_LIMIT_MAX` per user per minute (default 300; keyed by user ID, not shared office IP).
 - Password policy: 8+ chars with upper, lower, number, and special character.
 
 ## Authorization / IDOR

@@ -12,8 +12,8 @@ import (
 // RegisterPublic mounts unauthenticated auth endpoints under /api/v1/auth.
 func RegisterPublic(api *gin.RouterGroup, h *handler.AuthHandler, cfg *config.Config) {
 	group := api.Group("/auth")
-	group.POST("/login", middleware.RateLimit(10), middleware.BruteForceGuard(), h.Login)
-	group.POST("/refresh", middleware.RateLimit(30), h.RefreshToken)
+	group.POST("/login", middleware.RateLimit(30), middleware.BruteForceGuard(), h.Login)
+	group.POST("/refresh", middleware.RateLimit(60), h.RefreshToken)
 	group.POST("/forgot-password", middleware.RateLimit(5), h.ForgotPassword)
 	group.POST("/reset-password", middleware.RateLimit(5), h.ResetPassword)
 	group.POST("/verify-2fa", middleware.RateLimit(5), middleware.Temp2FAMiddleware(cfg), h.Verify2FA)
