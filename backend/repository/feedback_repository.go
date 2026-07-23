@@ -86,6 +86,11 @@ type FeedbackListFilter struct {
 	Offset          int
 }
 
+func needsTicketJoin(filter FeedbackListFilter) bool {
+	return (filter.ServiceCallType != nil && *filter.ServiceCallType != "") ||
+		(filter.Priority != nil && *filter.Priority != "")
+}
+
 func (r *FeedbackRepository) applyFilters(q *gorm.DB, filter FeedbackListFilter) *gorm.DB {
 	if filter.EngineerID != nil {
 		q = q.Where("ticket_feedbacks.engineer_id = ?", *filter.EngineerID)
@@ -108,8 +113,7 @@ func (r *FeedbackRepository) applyFilters(q *gorm.DB, filter FeedbackListFilter)
 	if filter.To != nil {
 		q = q.Where("ticket_feedbacks.created_at <= ?", *filter.To)
 	}
-	if (filter.ServiceCallType != nil && *filter.ServiceCallType != "") ||
-		(filter.Priority != nil && *filter.Priority != "") {
+	if needsTicketJoin(filter) {
 		q = q.Joins("JOIN tickets ON tickets.id = ticket_feedbacks.ticket_id")
 		if filter.ServiceCallType != nil && *filter.ServiceCallType != "" {
 			q = q.Where("tickets.service_call_type = ?", *filter.ServiceCallType)
@@ -121,9 +125,15 @@ func (r *FeedbackRepository) applyFilters(q *gorm.DB, filter FeedbackListFilter)
 	return q
 }
 
+// applyFiltersExceptRating applies analytics filters but skips rating (for pending counts).
+func (r *FeedbackRepository) applyFiltersExceptRating(q *gorm.DB, filter FeedbackListFilter) *gorm.DB {
+	noRating := filter
+	noRating.Rating = nil
+	return r.applyFilters(q, noRating)
+}
+
 func (r *FeedbackRepository) List(filter FeedbackListFilter) ([]models.TicketFeedback, int64, error) {
-	q := r.db.Model(&models.TicketFeedback{})
-	q = r.applyFilters(q, filter)
+	q := r.applyFilters(r.db.Model(&models.TicketFeedback{}), filter)
 
 	var total int64
 	if err := q.Count(&total).Error; err != nil {
@@ -139,24 +149,26 @@ func (r *FeedbackRepository) List(filter FeedbackListFilter) ([]models.TicketFee
 		offset = 0
 	}
 
-	var rows []models.TicketFeedback
-	err := r.applyFilters(r.db.Model(&models.TicketFeedback{}), filter).
+	findQ := r.applyFilters(r.db.Model(&models.TicketFeedback{}), filter).
+		Select("ticket_feedbacks.*").
 		Preload("Engineer.User").
 		Preload("Customer").
 		Preload("Company").
 		Preload("Ticket").
 		Order("ticket_feedbacks.created_at DESC").
 		Limit(limit).
-		Offset(offset).
-		Find(&rows).Error
+		Offset(offset)
+
+	var rows []models.TicketFeedback
+	err := findQ.Find(&rows).Error
 	return rows, total, err
 }
 
 func (r *FeedbackRepository) ListPending(engineerID *uuid.UUID, limit int) ([]models.TicketFeedback, error) {
 	q := r.db.Model(&models.TicketFeedback{}).
-		Where("feedback_status = ?", models.FeedbackStatusPending)
+		Where("ticket_feedbacks.feedback_status = ?", models.FeedbackStatusPending)
 	if engineerID != nil {
-		q = q.Where("engineer_id = ?", *engineerID)
+		q = q.Where("ticket_feedbacks.engineer_id = ?", *engineerID)
 	}
 	if limit <= 0 {
 		limit = 100
@@ -167,7 +179,7 @@ func (r *FeedbackRepository) ListPending(engineerID *uuid.UUID, limit int) ([]mo
 		Preload("Customer").
 		Preload("Company").
 		Preload("Ticket").
-		Order("created_at DESC").
+		Order("ticket_feedbacks.created_at DESC").
 		Limit(limit).
 		Find(&rows).Error
 	return rows, err
@@ -180,10 +192,10 @@ func (r *FeedbackRepository) ListPendingByCustomer(customerID uuid.UUID, limit i
 	}
 	var rows []models.TicketFeedback
 	err := r.db.Model(&models.TicketFeedback{}).
-		Where("feedback_status = ? AND customer_id = ?", models.FeedbackStatusPending, customerID).
+		Where("ticket_feedbacks.feedback_status = ? AND ticket_feedbacks.customer_id = ?", models.FeedbackStatusPending, customerID).
 		Preload("Engineer.User").
 		Preload("Ticket").
-		Order("created_at DESC").
+		Order("ticket_feedbacks.created_at DESC").
 		Limit(limit).
 		Find(&rows).Error
 	return rows, err
@@ -194,12 +206,12 @@ func (r *FeedbackRepository) ListByEngineer(engineerID uuid.UUID, limit int) ([]
 		limit = 50
 	}
 	var rows []models.TicketFeedback
-	err := r.db.
-		Where("engineer_id = ? AND feedback_status = ?", engineerID, models.FeedbackStatusSubmitted).
+	err := r.db.Model(&models.TicketFeedback{}).
+		Where("ticket_feedbacks.engineer_id = ? AND ticket_feedbacks.feedback_status = ?", engineerID, models.FeedbackStatusSubmitted).
 		Preload("Customer").
 		Preload("Company").
 		Preload("Ticket").
-		Order("submitted_at DESC NULLS LAST, created_at DESC").
+		Order("ticket_feedbacks.submitted_at DESC NULLS LAST, ticket_feedbacks.created_at DESC").
 		Limit(limit).
 		Find(&rows).Error
 	return rows, err
@@ -222,13 +234,13 @@ func (r *FeedbackRepository) StatsForEngineer(engineerID uuid.UUID) (*EngineerFe
 	stats := &EngineerFeedbackStats{EngineerID: engineerID}
 
 	type row struct {
-		Average  float64
-		Total    int64
-		FiveStar int64
-		FourStar int64
+		Average   float64
+		Total     int64
+		FiveStar  int64
+		FourStar  int64
 		ThreeStar int64
-		TwoStar  int64
-		OneStar  int64
+		TwoStar   int64
+		OneStar   int64
 	}
 	var agg row
 	err := r.db.Raw(`
@@ -271,10 +283,10 @@ type MonthlyRatingPoint struct {
 
 func (r *FeedbackRepository) MonthlyTrend(filter FeedbackListFilter) ([]MonthlyRatingPoint, error) {
 	q := r.db.Table("ticket_feedbacks").
-		Select(`TO_CHAR(DATE_TRUNC('month', COALESCE(submitted_at, created_at)), 'YYYY-MM') AS month,
-			COALESCE(AVG(rating)::float, 0) AS average,
+		Select(`TO_CHAR(DATE_TRUNC('month', COALESCE(ticket_feedbacks.submitted_at, ticket_feedbacks.created_at)), 'YYYY-MM') AS month,
+			COALESCE(AVG(ticket_feedbacks.rating)::float, 0) AS average,
 			COUNT(*) AS count`).
-		Where("feedback_status = ? AND rating IS NOT NULL", models.FeedbackStatusSubmitted)
+		Where("ticket_feedbacks.feedback_status = ? AND ticket_feedbacks.rating IS NOT NULL", models.FeedbackStatusSubmitted)
 	q = r.applyFilters(q, filter)
 	q = q.Group("month").Order("month ASC")
 
@@ -290,10 +302,10 @@ type RatingDistribution struct {
 
 func (r *FeedbackRepository) Distribution(filter FeedbackListFilter) ([]RatingDistribution, error) {
 	q := r.db.Table("ticket_feedbacks").
-		Select("rating, COUNT(*) AS count").
-		Where("feedback_status = ? AND rating IS NOT NULL", models.FeedbackStatusSubmitted)
+		Select("ticket_feedbacks.rating AS rating, COUNT(*) AS count").
+		Where("ticket_feedbacks.feedback_status = ? AND ticket_feedbacks.rating IS NOT NULL", models.FeedbackStatusSubmitted)
 	q = r.applyFilters(q, filter)
-	q = q.Group("rating").Order("rating DESC")
+	q = q.Group("ticket_feedbacks.rating").Order("ticket_feedbacks.rating DESC")
 
 	var rows []RatingDistribution
 	err := q.Scan(&rows).Error
@@ -351,7 +363,10 @@ func (r *FeedbackRepository) AnalyticsKPIs(filter FeedbackListFilter) (*Analytic
 	kpis := &AnalyticsKPIs{}
 
 	submittedQ := r.applyFilters(
-		r.db.Table("ticket_feedbacks").Where("feedback_status = ? AND rating IS NOT NULL", models.FeedbackStatusSubmitted),
+		r.db.Table("ticket_feedbacks").Where(
+			"ticket_feedbacks.feedback_status = ? AND ticket_feedbacks.rating IS NOT NULL",
+			models.FeedbackStatusSubmitted,
+		),
 		filter,
 	)
 	type agg struct {
@@ -362,10 +377,10 @@ func (r *FeedbackRepository) AnalyticsKPIs(filter FeedbackListFilter) (*Analytic
 	}
 	var a agg
 	if err := submittedQ.Select(`
-		COALESCE(AVG(rating)::float, 0) AS average,
+		COALESCE(AVG(ticket_feedbacks.rating)::float, 0) AS average,
 		COUNT(*) AS total,
-		COUNT(*) FILTER (WHERE rating >= 4) AS csat,
-		COUNT(*) FILTER (WHERE rating = 5) AS five_star
+		COUNT(*) FILTER (WHERE ticket_feedbacks.rating >= 4) AS csat,
+		COUNT(*) FILTER (WHERE ticket_feedbacks.rating = 5) AS five_star
 	`).Scan(&a).Error; err != nil {
 		return nil, err
 	}
@@ -376,8 +391,12 @@ func (r *FeedbackRepository) AnalyticsKPIs(filter FeedbackListFilter) (*Analytic
 		kpis.FiveStarPercent = (float64(a.FiveStar) / float64(a.Total)) * 100
 	}
 
-	pendingQ := r.applyFilters(
-		r.db.Table("ticket_feedbacks").Where("feedback_status = ?", models.FeedbackStatusPending),
+	// Pending rows usually have NULL rating — never apply the star filter here.
+	pendingQ := r.applyFiltersExceptRating(
+		r.db.Table("ticket_feedbacks").Where(
+			"ticket_feedbacks.feedback_status = ?",
+			models.FeedbackStatusPending,
+		),
 		filter,
 	)
 	if err := pendingQ.Count(&kpis.PendingCount).Error; err != nil {

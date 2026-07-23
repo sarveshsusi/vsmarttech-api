@@ -170,6 +170,7 @@ func (h *FeedbackHandler) Analytics(c *gin.Context) {
 
 	data, err := h.service.Analytics(filter)
 	if err != nil {
+		c.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "unable to load analytics"})
 		return
 	}
