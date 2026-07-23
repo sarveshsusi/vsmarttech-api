@@ -18,11 +18,12 @@ func NewFeedbackHandler(s *service.FeedbackService) *FeedbackHandler {
 }
 
 func (h *FeedbackHandler) Submit(c *gin.Context) {
+	userID := c.MustGet("user_id").(uuid.UUID)
+
 	var req struct {
-		TicketID   string    `json:"ticket_id" binding:"required"`
-		EngineerID uuid.UUID `json:"engineer_id"`
-		Rating     int       `json:"rating"`
-		Comment    string    `json:"comment"`
+		TicketID string `json:"ticket_id" binding:"required"`
+		Rating   int    `json:"rating" binding:"required"`
+		Comment  string `json:"comment"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -31,8 +32,8 @@ func (h *FeedbackHandler) Submit(c *gin.Context) {
 	}
 
 	if err := h.service.Submit(
+		userID,
 		req.TicketID,
-		req.EngineerID,
 		req.Rating,
 		req.Comment,
 	); err != nil {

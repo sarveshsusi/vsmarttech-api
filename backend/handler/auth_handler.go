@@ -86,6 +86,8 @@ type UpdateProfileRequest struct {
 func (h *AuthHandler) setRefreshCookie(c *gin.Context, token string) {
 	secure := h.cfg.Server.Env == "production"
 
+	// SameSite=Strict blocks cross-site cookie sends (CSRF on /auth/refresh)
+	c.SetSameSite(http.SameSiteStrictMode)
 	c.SetCookie(
 		"refresh_token",
 		token,
@@ -100,6 +102,7 @@ func (h *AuthHandler) setRefreshCookie(c *gin.Context, token string) {
 func (h *AuthHandler) clearRefreshCookie(c *gin.Context) {
 	secure := h.cfg.Server.Env == "production"
 
+	c.SetSameSite(http.SameSiteStrictMode)
 	c.SetCookie(
 		"refresh_token",
 		"",

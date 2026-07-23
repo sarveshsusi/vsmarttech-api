@@ -3,7 +3,6 @@ package utils
 import (
 	"errors"
 	"fmt"
-	"io"
 	"mime/multipart"
 	"os"
 	"path/filepath"
@@ -25,9 +24,8 @@ func NewLocalUploader(uploadDir string, baseURL string) ImageUploader {
 }
 
 func (u *LocalUploader) Upload(file *multipart.FileHeader) (string, error) {
-	// ✅ size check FIRST
-	if file.Size > 5*1024*1024 {
-		return "", errors.New("file too large (max 5MB)")
+	if file.Size > 1*1024*1024 {
+		return "", errors.New("file too large (max 1MB)")
 	}
 
 	src, err := file.Open()
@@ -36,32 +34,36 @@ func (u *LocalUploader) Upload(file *multipart.FileHeader) (string, error) {
 	}
 	defer src.Close()
 
-	// ✅ Generate unique filename
-	fileName := fmt.Sprintf(
-		"%d%s",
-		time.Now().UnixNano(),
-		filepath.Ext(file.Filename),
-	)
+	fileBytes := make([]byte, file.Size)
+	if _, err := src.Read(fileBytes); err != nil {
+		return "", err
+	}
 
-	// ✅ Create file path
+	contentType, err := DetectImageContentType(fileBytes)
+	if err != nil {
+		return "", errors.New("unsupported image type")
+	}
+	if err := ValidateDecodableImage(fileBytes); err != nil {
+		return "", err
+	}
+
+	return u.UploadValidated(fileBytes, contentType)
+}
+
+func (u *LocalUploader) UploadValidated(data []byte, contentType string) (string, error) {
+	if len(data) > 1*1024*1024 {
+		return "", errors.New("file too large (max 1MB)")
+	}
+
+	ext := SafeUploadFilename(contentType)
+	fileName := fmt.Sprintf("%d%s", time.Now().UnixNano(), ext)
 	filePath := filepath.Join(u.uploadDir, fileName)
 
-	// ✅ Create destination file
-	dst, err := os.Create(filePath)
-	if err != nil {
-		return "", err
-	}
-	defer dst.Close()
-
-	// ✅ Copy file contents
-	if _, err := io.Copy(dst, src); err != nil {
-		os.Remove(filePath)
+	if err := os.WriteFile(filePath, data, 0644); err != nil {
 		return "", err
 	}
 
-	// ✅ Return relative URL
-	fileURL := u.baseURL + "/" + fileName
-	return fileURL, nil
+	return u.baseURL + "/" + fileName, nil
 }
 
 // GenerateAuthToken is not applicable for local uploads

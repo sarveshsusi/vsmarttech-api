@@ -11,8 +11,9 @@ func TestValidatePasswordStrength(t *testing.T) {
 		{"too short", "Ab1", true},
 		{"missing upper", "abcdefg1", true},
 		{"missing lower", "ABCDEFG1", true},
-		{"missing number", "Abcdefgh", true},
-		{"valid", "Abcdefg1", false},
+		{"missing number", "Abcdefgh!", true},
+		{"missing special", "Abcdefg1", true},
+		{"valid", "Abcdefg1!", false},
 	}
 
 	for _, tt := range tests {
@@ -26,14 +27,14 @@ func TestValidatePasswordStrength(t *testing.T) {
 }
 
 func TestHashAndCheckPassword(t *testing.T) {
-	hash, err := HashPassword("Abcdefg1")
+	hash, err := HashPassword("Abcdefg1!")
 	if err != nil {
 		t.Fatalf("HashPassword: %v", err)
 	}
-	if err := CheckPassword("Abcdefg1", hash); err != nil {
+	if err := CheckPassword("Abcdefg1!", hash); err != nil {
 		t.Fatalf("CheckPassword valid: %v", err)
 	}
-	if err := CheckPassword("WrongPass1", hash); err == nil {
+	if err := CheckPassword("WrongPass1!", hash); err == nil {
 		t.Fatal("CheckPassword expected error for wrong password")
 	}
 }

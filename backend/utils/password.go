@@ -26,7 +26,7 @@ func ValidatePasswordStrength(password string) error {
 		return errors.New("password must be at least 8 characters")
 	}
 
-	var hasUpper, hasLower, hasNumber bool
+	var hasUpper, hasLower, hasNumber, hasSpecial bool
 
 	for _, c := range password {
 		switch {
@@ -36,11 +36,13 @@ func ValidatePasswordStrength(password string) error {
 			hasLower = true
 		case unicode.IsDigit(c):
 			hasNumber = true
+		case !unicode.IsLetter(c) && !unicode.IsDigit(c) && !unicode.IsSpace(c):
+			hasSpecial = true
 		}
 	}
 
-	if !hasUpper || !hasLower || !hasNumber {
-		return errors.New("password must contain upper, lower and number")
+	if !hasUpper || !hasLower || !hasNumber || !hasSpecial {
+		return errors.New("password must contain upper, lower, number and special character")
 	}
 
 	return nil

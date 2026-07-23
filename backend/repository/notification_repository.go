@@ -55,15 +55,22 @@ func (r *NotificationRepository) GetUnreadCount(userID uuid.UUID) (int64, error)
    MARK AS READ
 ========================= */
 
-func (r *NotificationRepository) MarkAsRead(notificationID uuid.UUID) error {
+func (r *NotificationRepository) MarkAsRead(notificationID, userID uuid.UUID) error {
 	now := gorm.Expr("CURRENT_TIMESTAMP")
-	return r.db.
+	result := r.db.
 		Model(&models.Notification{}).
-		Where("id = ?", notificationID).
+		Where("id = ? AND user_id = ?", notificationID, userID).
 		Updates(map[string]interface{}{
 			"is_read": true,
 			"read_at": now,
-		}).Error
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 /* =========================

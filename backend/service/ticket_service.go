@@ -858,13 +858,18 @@ func (s *TicketService) AdminAssignTicket(
 =========================
 */
 func (s *TicketService) GetTicketById(ticketID string, userID uuid.UUID) (*models.Ticket, error) {
-	ticket, err := s.ticketRepo.GetByID(ticketID)
+	customer, err := s.customerRepo.GetByUserID(userID)
 	if err != nil {
-		return nil, err
+		return nil, errors.New("ticket not found or access denied")
 	}
 
-	// Verify that the ticket belongs to the customer
-	if ticket.CustomerID != userID {
+	ticket, err := s.ticketRepo.GetByID(ticketID)
+	if err != nil {
+		return nil, errors.New("ticket not found or access denied")
+	}
+
+	// Compare customers.id (not users.id) to prevent IDOR
+	if ticket.CustomerID != customer.ID {
 		return nil, errors.New("ticket not found or access denied")
 	}
 

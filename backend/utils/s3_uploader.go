@@ -54,51 +54,59 @@ func NewS3Uploader(cfg *awsconfig.Config) (ImageUploader, error) {
 
 // Upload uploads file to S3, compressing if necessary
 func (u *S3Uploader) Upload(file *multipart.FileHeader) (string, error) {
-	// Validate file size
 	if file.Size > u.maxSizeBytes {
 		return "", fmt.Errorf("file size (%d bytes) exceeds maximum (%d bytes)", file.Size, u.maxSizeBytes)
 	}
 
-	// Open file
 	src, err := file.Open()
 	if err != nil {
 		return "", fmt.Errorf("failed to open file: %w", err)
 	}
 	defer src.Close()
 
-	// Read file into memory
 	fileBytes := make([]byte, file.Size)
 	if _, err := src.Read(fileBytes); err != nil {
 		return "", fmt.Errorf("failed to read file: %w", err)
 	}
 
-	// Determine if we need to compress
-	var uploadBytes []byte
-	var finalFilename string
-
-	if file.Size > u.compressThreshold {
-		log.Printf("[S3_UPLOAD] Compressing image: %s (size: %d bytes)", file.Filename, file.Size)
-		compressed, err := u.compressImage(fileBytes, file.Filename)
-		if err != nil {
-			log.Printf("[S3_UPLOAD_COMPRESS_ERROR] Failed to compress: %v", err)
-			// If compression fails, use original
-			uploadBytes = fileBytes
-			finalFilename = file.Filename
-		} else {
-			uploadBytes = compressed
-			finalFilename = addCompressionSuffix(file.Filename)
-			log.Printf("[S3_UPLOAD_COMPRESSED] Original: %d bytes -> Compressed: %d bytes", file.Size, len(uploadBytes))
-		}
-	} else {
-		uploadBytes = fileBytes
-		finalFilename = file.Filename
-		log.Printf("[S3_UPLOAD] Uploading without compression: %s (size: %d bytes)", file.Filename, file.Size)
+	contentType, err := DetectImageContentType(fileBytes)
+	if err != nil {
+		return "", fmt.Errorf("unsupported image type")
+	}
+	if err := ValidateDecodableImage(fileBytes); err != nil {
+		return "", err
 	}
 
-	// Generate S3 key (path)
-	s3Key := fmt.Sprintf("%s/%d_%s", u.folder, time.Now().UnixNano(), finalFilename)
+	return u.UploadValidated(fileBytes, contentType)
+}
 
-	// Upload to S3
+// UploadValidated uploads sniffed image bytes with a random safe filename.
+func (u *S3Uploader) UploadValidated(fileBytes []byte, contentType string) (string, error) {
+	if int64(len(fileBytes)) > u.maxSizeBytes {
+		return "", fmt.Errorf("file size (%d bytes) exceeds maximum (%d bytes)", len(fileBytes), u.maxSizeBytes)
+	}
+
+	var uploadBytes []byte
+	var finalFilename string
+	ext := SafeUploadFilename(contentType)
+
+	if int64(len(fileBytes)) > u.compressThreshold {
+		log.Printf("[S3_UPLOAD] Compressing image (size: %d bytes)", len(fileBytes))
+		compressed, err := u.compressImage(fileBytes, "upload"+ext)
+		if err != nil {
+			return "", fmt.Errorf("invalid image content")
+		}
+		uploadBytes = compressed
+		finalFilename = fmt.Sprintf("%d_compressed%s", time.Now().UnixNano(), ext)
+		log.Printf("[S3_UPLOAD_COMPRESSED] Original: %d bytes -> Compressed: %d bytes", len(fileBytes), len(uploadBytes))
+	} else {
+		uploadBytes = fileBytes
+		finalFilename = fmt.Sprintf("%d%s", time.Now().UnixNano(), ext)
+		log.Printf("[S3_UPLOAD] Uploading without compression (size: %d bytes)", len(fileBytes))
+	}
+
+	s3Key := fmt.Sprintf("%s/%s", u.folder, finalFilename)
+
 	uploader := manager.NewUploader(u.client)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -107,9 +115,7 @@ func (u *S3Uploader) Upload(file *multipart.FileHeader) (string, error) {
 		Bucket:      aws.String(u.bucket),
 		Key:         aws.String(s3Key),
 		Body:        bytes.NewReader(uploadBytes),
-		ContentType: aws.String(file.Header.Get("Content-Type")),
-		// Note: ACL removed - bucket may have ACLs disabled
-		// Use bucket policy for public read access instead
+		ContentType: aws.String(contentType),
 	})
 
 	if err != nil {

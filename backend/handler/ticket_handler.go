@@ -405,30 +405,54 @@ func (h *TicketHandler) GetImageKitAuthToken(c *gin.Context) {
 ========================= */
 
 func (h *TicketHandler) UploadProofImage(c *gin.Context) {
-	// Get file from form
 	file, err := c.FormFile("file")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "No file provided"})
 		return
 	}
 
-	// Validate file type (only images)
-	allowedTypes := []string{"image/jpeg", "image/png", "image/webp", "image/gif"}
-	isAllowed := false
-	for _, allowedType := range allowedTypes {
-		if file.Header.Get("Content-Type") == allowedType {
-			isAllowed = true
-			break
-		}
+	// Hard size cap before reading (defense in depth — MaxBodySize also applies)
+	const maxUploadBytes = 1 << 20 // 1MB
+	if file.Size <= 0 || file.Size > maxUploadBytes {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "File must be between 1 byte and 1MB"})
+		return
 	}
 
-	if !isAllowed {
+	src, err := file.Open()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid file"})
+		return
+	}
+	defer src.Close()
+
+	fileBytes := make([]byte, file.Size)
+	if _, err := src.Read(fileBytes); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid file"})
+		return
+	}
+
+	contentType, err := utils.DetectImageContentType(fileBytes)
+	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Only JPEG, PNG, WebP, and GIF allowed"})
 		return
 	}
 
-	// Upload to S3 (with compression if needed)
-	imageURL, err := h.uploader.Upload(file)
+	if err := utils.ValidateDecodableImage(fileBytes); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Only JPEG, PNG, WebP, and GIF allowed"})
+		return
+	}
+
+	// Block dangerous / double extensions on the client-supplied name
+	lowerName := strings.ToLower(file.Filename)
+	blocked := []string{".exe", ".dll", ".php", ".jsp", ".aspx", ".js", ".html", ".htm", ".svg", ".bat", ".sh", ".cgi"}
+	for _, ext := range blocked {
+		if strings.Contains(lowerName, ext) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "File type not allowed"})
+			return
+		}
+	}
+
+	imageURL, err := h.uploader.UploadValidated(fileBytes, contentType)
 	if err != nil {
 		log.Printf("[UPLOAD_ERROR] %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload image"})

@@ -87,6 +87,7 @@ func (h *NotificationHandler) GetUnreadCount(c *gin.Context) {
 ========================= */
 
 func (h *NotificationHandler) MarkAsRead(c *gin.Context) {
+	userID := c.MustGet("user_id").(uuid.UUID)
 	notificationID := c.Param("id")
 	id, err := uuid.Parse(notificationID)
 	if err != nil {
@@ -94,8 +95,8 @@ func (h *NotificationHandler) MarkAsRead(c *gin.Context) {
 		return
 	}
 
-	if err := h.notifService.MarkAsRead(id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to mark as read"})
+	if err := h.notifService.MarkAsRead(id, userID); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Notification not found"})
 		return
 	}
 

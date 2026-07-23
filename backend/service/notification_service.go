@@ -699,8 +699,8 @@ func (s *NotificationService) GetUnreadCount(userID uuid.UUID) (int64, error) {
    MARK AS READ
 ========================= */
 
-func (s *NotificationService) MarkAsRead(notificationID uuid.UUID) error {
-	return s.notifRepo.MarkAsRead(notificationID)
+func (s *NotificationService) MarkAsRead(notificationID, userID uuid.UUID) error {
+	return s.notifRepo.MarkAsRead(notificationID, userID)
 }
 
 /* =========================

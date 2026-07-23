@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
 	"rbac/config"
 	"rbac/models"
@@ -27,9 +28,9 @@ const (
 =====================
  Auth Middleware
 =====================
- Validates JWT access token
+ Validates JWT access token and rejects inactive accounts.
 */
-func AuthMiddleware(cfg *config.Config) gin.HandlerFunc {
+func AuthMiddleware(cfg *config.Config, db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
@@ -56,7 +57,6 @@ func AuthMiddleware(cfg *config.Config) gin.HandlerFunc {
 			return
 		}
 
-		// 🔒 Parse UUID from JWT (CRITICAL)
 		userID, err := uuid.Parse(claims.UserID)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
@@ -65,10 +65,29 @@ func AuthMiddleware(cfg *config.Config) gin.HandlerFunc {
 			return
 		}
 
-		// ✅ Set typed values into context
-		c.Set(CtxUserID, userID)            // uuid.UUID
-		c.Set(CtxUserEmail, claims.Email)   // string
-		c.Set(CtxUserRole, claims.Role)     // models.Role
+		// Re-check account status / role from DB (prevents disabled-user JWT reuse)
+		if db != nil {
+			var user models.User
+			if err := db.Select("id", "role", "is_active", "email").First(&user, "id = ?", userID).Error; err != nil {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+					"error": "invalid or expired token",
+				})
+				return
+			}
+			if !user.IsActive {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+					"error": "account disabled",
+				})
+				return
+			}
+			c.Set(CtxUserID, userID)
+			c.Set(CtxUserEmail, user.Email)
+			c.Set(CtxUserRole, user.Role)
+		} else {
+			c.Set(CtxUserID, userID)
+			c.Set(CtxUserEmail, claims.Email)
+			c.Set(CtxUserRole, claims.Role)
+		}
 
 		c.Next()
 	}

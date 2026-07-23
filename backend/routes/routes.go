@@ -77,7 +77,7 @@ func SetupRoutes(
 	modauth.RegisterPublic(api, authHandler, cfg)
 
 	protected := api.Group("")
-	protected.Use(middleware.AuthMiddleware(cfg))
+	protected.Use(middleware.AuthMiddleware(cfg, db))
 	rateLimit := cfg.Server.RateLimitMax
 	if rateLimit <= 0 {
 		rateLimit = 60

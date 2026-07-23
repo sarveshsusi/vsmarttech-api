@@ -37,7 +37,7 @@ func TestAuthMiddleware(t *testing.T) {
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
 		c.Request = httptest.NewRequest(http.MethodGet, "/x", nil)
-		AuthMiddleware(cfg)(c)
+		AuthMiddleware(cfg, nil)(c)
 		if w.Code != http.StatusUnauthorized {
 			t.Fatalf("status=%d", w.Code)
 		}
@@ -48,7 +48,7 @@ func TestAuthMiddleware(t *testing.T) {
 		c, _ := gin.CreateTestContext(w)
 		c.Request = httptest.NewRequest(http.MethodGet, "/x", nil)
 		c.Request.Header.Set("Authorization", "Bearer not-a-token")
-		AuthMiddleware(cfg)(c)
+		AuthMiddleware(cfg, nil)(c)
 		if w.Code != http.StatusUnauthorized {
 			t.Fatalf("status=%d", w.Code)
 		}
@@ -57,7 +57,7 @@ func TestAuthMiddleware(t *testing.T) {
 	t.Run("valid token", func(t *testing.T) {
 		w := httptest.NewRecorder()
 		_, r := gin.CreateTestContext(w)
-		r.Use(AuthMiddleware(cfg))
+		r.Use(AuthMiddleware(cfg, nil))
 		r.GET("/x", func(c *gin.Context) {
 			id, _ := c.Get(CtxUserID)
 			c.JSON(http.StatusOK, gin.H{"user_id": id})
