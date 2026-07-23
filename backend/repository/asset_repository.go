@@ -21,8 +21,10 @@ type AssetListFilter struct {
 	CustomerSolutionID string
 	Status             string
 	Statuses           []string
-	Limit              int
-	Offset             int
+	// IsReplacement filters by the optional replacement checkbox when non-nil.
+	IsReplacement *bool
+	Limit         int
+	Offset        int
 }
 
 func (r *AssetRepository) Create(asset *models.Asset) error {
@@ -95,6 +97,9 @@ func (r *AssetRepository) List(filter AssetListFilter) ([]models.Asset, int64, e
 		} else {
 			q = q.Where("status = ?", filter.Status)
 		}
+	}
+	if filter.IsReplacement != nil {
+		q = q.Where("is_replacement = ?", *filter.IsReplacement)
 	}
 
 	var total int64

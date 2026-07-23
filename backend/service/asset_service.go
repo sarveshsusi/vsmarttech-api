@@ -44,6 +44,8 @@ type AssetInput struct {
 	Notes              string
 	Status             models.AssetStatus
 	InstalledAt        *time.Time
+	// IsReplacement is optional; nil means leave unchanged on update / default false on create.
+	IsReplacement *bool
 }
 
 // LinkedTicketSummary is the open ticket currently attached to an asset.
@@ -117,6 +119,10 @@ func (s *AssetService) Create(adminID uuid.UUID, in AssetInput) (*models.Asset, 
 	}
 
 	now := time.Now()
+	isReplacement := false
+	if in.IsReplacement != nil {
+		isReplacement = *in.IsReplacement
+	}
 	asset := &models.Asset{
 		CompanyID:          in.CompanyID,
 		CustomerID:         customerID,
@@ -128,6 +134,7 @@ func (s *AssetService) Create(adminID uuid.UUID, in AssetInput) (*models.Asset, 
 		SiteLocation:       strings.TrimSpace(in.SiteLocation),
 		Notes:              strings.TrimSpace(in.Notes),
 		Status:             status,
+		IsReplacement:      isReplacement,
 		InstalledAt:        in.InstalledAt,
 		CreatedBy:          adminID,
 		CreatedAt:          now,
@@ -181,6 +188,9 @@ func (s *AssetService) Update(id uuid.UUID, adminID uuid.UUID, in AssetInput) (*
 		}
 		asset.Status = models.NormalizeAssetStatus(in.Status)
 	}
+	if in.IsReplacement != nil {
+		asset.IsReplacement = *in.IsReplacement
+	}
 	asset.InstalledAt = in.InstalledAt
 	asset.CustomerSolutionID = in.CustomerSolutionID
 
@@ -226,6 +236,23 @@ func (s *AssetService) UpdateStatus(id uuid.UUID, status models.AssetStatus, adm
 		return nil, err
 	}
 	s.recordStatusChange(id, oldStatus, newStatus, adminID, s.linkedTicketIDPtr(id))
+	return s.repo.GetByID(id)
+}
+
+// UpdateReplacement sets the optional replacement checkbox without changing material status.
+func (s *AssetService) UpdateReplacement(id uuid.UUID, isReplacement bool, _ uuid.UUID) (*models.Asset, error) {
+	asset, err := s.repo.GetByID(id)
+	if err != nil {
+		return nil, errors.New("asset not found")
+	}
+	if asset.IsReplacement == isReplacement {
+		return s.repo.GetByID(id)
+	}
+	asset.IsReplacement = isReplacement
+	asset.UpdatedAt = time.Now()
+	if err := s.repo.Update(asset); err != nil {
+		return nil, err
+	}
 	return s.repo.GetByID(id)
 }
 

@@ -90,6 +90,9 @@ type Asset struct {
 
 	Status AssetStatus `gorm:"type:varchar(32);default:'At Site'" json:"status"`
 
+	// IsReplacement is an optional workshop flag (checkbox), not a material status.
+	IsReplacement bool `gorm:"not null;default:false" json:"is_replacement"`
+
 	InstalledAt *time.Time `json:"installed_at,omitempty"`
 	CreatedBy   uuid.UUID  `gorm:"type:uuid;not null" json:"created_by"`
 	CreatedAt   time.Time  `json:"created_at"`

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -46,6 +47,8 @@ type assetBody struct {
 	Notes              string  `json:"notes"`
 	Status             string  `json:"status"`
 	InstalledAt        *string `json:"installed_at"`
+	// IsReplacement is optional (checkbox). Omitted means unchanged on update / false on create.
+	IsReplacement *bool `json:"is_replacement"`
 }
 
 func (h *AssetHandler) bindInput(body assetBody) (service.AssetInput, error) {
@@ -81,6 +84,7 @@ func (h *AssetHandler) bindInput(body assetBody) (service.AssetInput, error) {
 		Notes:              body.Notes,
 		Status:             models.AssetStatus(body.Status),
 		InstalledAt:        installedAt,
+		IsReplacement:      body.IsReplacement,
 	}, nil
 }
 
@@ -129,6 +133,23 @@ func (h *AssetHandler) Update(c *gin.Context) {
 	c.JSON(http.StatusOK, asset)
 }
 
+func parseIsReplacementQuery(raw string) (*bool, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	switch strings.ToLower(raw) {
+	case "true", "1", "yes":
+		v := true
+		return &v, nil
+	case "false", "0", "no":
+		v := false
+		return &v, nil
+	default:
+		return nil, errors.New("is_replacement must be true or false")
+	}
+}
+
 func (h *AssetHandler) List(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "50"))
@@ -146,12 +167,19 @@ func (h *AssetHandler) List(c *gin.Context) {
 		}
 	}
 
+	isReplacement, err := parseIsReplacementQuery(c.Query("is_replacement"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	rows, total, err := h.service.List(repository.AssetListFilter{
 		Search:             c.Query("search"),
 		CompanyID:          c.Query("company_id"),
 		CustomerSolutionID: c.Query("customer_solution_id"),
 		Status:             c.Query("status"),
 		Statuses:           statuses,
+		IsReplacement:      isReplacement,
 		Limit:              pageSize,
 		Offset:             (page - 1) * pageSize,
 	})
@@ -196,6 +224,28 @@ func (h *AssetHandler) UpdateStatus(c *gin.Context) {
 	}
 	adminID := c.MustGet("user_id").(uuid.UUID)
 	asset, err := h.service.UpdateStatus(id, models.AssetStatus(body.Status), adminID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, asset)
+}
+
+func (h *AssetHandler) UpdateReplacement(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid asset id"})
+		return
+	}
+	var body struct {
+		IsReplacement *bool `json:"is_replacement" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil || body.IsReplacement == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "is_replacement is required"})
+		return
+	}
+	adminID := c.MustGet("user_id").(uuid.UUID)
+	asset, err := h.service.UpdateReplacement(id, *body.IsReplacement, adminID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

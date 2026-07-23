@@ -53,6 +53,7 @@ func RegisterAdmin(admin *gin.RouterGroup, h Handlers) {
 	admin.GET("/assets/:id/status-history", h.Asset.StatusHistory)
 	admin.PUT("/assets/:id", h.Asset.Update)
 	admin.PUT("/assets/:id/status", h.Asset.UpdateStatus)
+	admin.PUT("/assets/:id/replacement", h.Asset.UpdateReplacement)
 	admin.PUT("/assets/:id/link-ticket", h.Asset.LinkTicket)
 	admin.DELETE("/assets/:id", h.Asset.Delete)
 }
