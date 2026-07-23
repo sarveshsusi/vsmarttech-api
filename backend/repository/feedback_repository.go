@@ -173,6 +173,22 @@ func (r *FeedbackRepository) ListPending(engineerID *uuid.UUID, limit int) ([]mo
 	return rows, err
 }
 
+// ListPendingByCustomer returns pending feedback rows owned by the given customer.
+func (r *FeedbackRepository) ListPendingByCustomer(customerID uuid.UUID, limit int) ([]models.TicketFeedback, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	var rows []models.TicketFeedback
+	err := r.db.Model(&models.TicketFeedback{}).
+		Where("feedback_status = ? AND customer_id = ?", models.FeedbackStatusPending, customerID).
+		Preload("Engineer.User").
+		Preload("Ticket").
+		Order("created_at DESC").
+		Limit(limit).
+		Find(&rows).Error
+	return rows, err
+}
+
 func (r *FeedbackRepository) ListByEngineer(engineerID uuid.UUID, limit int) ([]models.TicketFeedback, error) {
 	if limit <= 0 {
 		limit = 50

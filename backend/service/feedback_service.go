@@ -323,6 +323,12 @@ func (s *FeedbackService) ListPending(requesterID uuid.UUID, role models.Role) (
 			return nil, errors.New("access denied")
 		}
 		return s.repo.ListPending(&eng.ID, 100)
+	case models.RoleCustomer:
+		customer, err := s.customerRepo.GetByUserID(requesterID)
+		if err != nil {
+			return nil, errors.New("access denied")
+		}
+		return s.repo.ListPendingByCustomer(customer.ID, 50)
 	default:
 		return nil, errors.New("access denied")
 	}
