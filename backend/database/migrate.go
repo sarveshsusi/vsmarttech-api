@@ -34,10 +34,31 @@ func Migrate(db *gorm.DB, mode string) {
 		syncEngineerIDs(db)
 		log.Println("Database migration completed (goose)")
 	default: // auto
+		// GORM cannot ADD ... NOT NULL over existing rows; backfill first.
+		ensureRefreshTokenFamilyIDColumn(db)
 		autoMigrate(db)
 		backfillRefreshTokenFamilyIDs(db)
 		syncEngineerIDs(db)
 		log.Println("Database migration completed (auto)")
+	}
+}
+
+// ensureRefreshTokenFamilyIDColumn adds family_id as nullable, backfills from id,
+// then sets NOT NULL — so AutoMigrate does not fail on populated refresh_tokens.
+func ensureRefreshTokenFamilyIDColumn(db *gorm.DB) {
+	if !db.Migrator().HasTable("refresh_tokens") {
+		return
+	}
+	if err := db.Exec(`ALTER TABLE refresh_tokens ADD COLUMN IF NOT EXISTS family_id UUID`).Error; err != nil {
+		log.Printf("warning: add refresh_tokens.family_id: %v", err)
+		return
+	}
+	backfillRefreshTokenFamilyIDs(db)
+	if err := db.Exec(`ALTER TABLE refresh_tokens ALTER COLUMN family_id SET NOT NULL`).Error; err != nil {
+		log.Printf("warning: set refresh_tokens.family_id NOT NULL: %v", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_refresh_tokens_family_id ON refresh_tokens (family_id)`).Error; err != nil {
+		log.Printf("warning: index refresh_tokens.family_id: %v", err)
 	}
 }
 
