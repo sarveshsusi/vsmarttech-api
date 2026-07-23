@@ -35,6 +35,8 @@ type DatabaseConfig struct {
 	MaxOpenConns int
 	MaxIdleConns int
 	ConnMaxLife  time.Duration
+	// MigrateMode: "auto" (GORM AutoMigrate), "goose" (versioned SQL), default by env.
+	MigrateMode string
 }
 
 type JWTConfig struct {
@@ -154,6 +156,20 @@ func LoadConfig() *Config {
 		log.Fatalf("COOKIE_SAMESITE must be none, lax, or strict (got %q)", cookieSameSite)
 	}
 
+	migrateMode := strings.ToLower(strings.TrimSpace(getEnv("MIGRATE_MODE", "")))
+	if migrateMode == "" {
+		if env == "production" {
+			migrateMode = "goose"
+		} else {
+			migrateMode = "auto"
+		}
+	}
+	switch migrateMode {
+	case "auto", "goose":
+	default:
+		log.Fatalf("MIGRATE_MODE must be auto or goose (got %q)", migrateMode)
+	}
+
 	return &Config{
 		Server: ServerConfig{
 			Port:              getEnv("SERVER_PORT", "8080"),
@@ -168,6 +184,7 @@ func LoadConfig() *Config {
 			MaxOpenConns: getEnvAsInt("DB_MAX_OPEN_CONNS", 10),
 			MaxIdleConns: getEnvAsInt("DB_MAX_IDLE_CONNS", 3),
 			ConnMaxLife:  time.Duration(getEnvAsInt("DB_CONN_MAX_LIFETIME_MINUTES", 30)) * time.Minute,
+			MigrateMode:  migrateMode,
 		},
 		JWT: JWTConfig{
 			AccessSecret:  accessSecret,

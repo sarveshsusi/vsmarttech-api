@@ -1,11 +1,12 @@
-# SQL migrations (reference)
+# SQL migrations (legacy reference)
 
-These `.sql` files are **manual/reference** helpers. The running API applies schema via GORM AutoMigrate in `database.Migrate` on `cmd/api` boot.
+These `.sql` files under `backend/migrations/` are **historical/manual** helpers.
+
+**Source of truth for production schema:** `database/migrations/` via goose
+(`MIGRATE_MODE=goose`). See `database/migrations/README.md`.
 
 ## Rules
 
-1. Prefer model changes + AutoMigrate for additive columns.
-2. Use SQL files for data backfills or constraints AutoMigrate cannot express.
-3. Never leave empty migration files.
-4. Workers must **not** run AutoMigrate (API only).
-5. Document any production SQL in the PR that introduces it.
+1. Do not add new production DDL here — add a goose migration under `database/migrations/`.
+2. Local development may still use `MIGRATE_MODE=auto` (GORM AutoMigrate).
+3. Workers must **not** run migrations (API only).

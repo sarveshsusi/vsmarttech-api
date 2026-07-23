@@ -209,6 +209,7 @@ func (s *AuthService) Login(
 
 	if err := s.repo.CreateRefreshToken(&models.RefreshToken{
 		UserID:    user.ID,
+		FamilyID:  uuid.New(),
 		Token:     utils.HashToken(refreshRaw),
 		ExpiresAt: time.Now().Add(s.cfg.JWT.RefreshExpiry),
 	}); err != nil {
@@ -252,9 +253,24 @@ func (s *AuthService) RefreshAccessToken(
 
 	oldHash := utils.HashToken(oldRaw)
 
-	rt, err := s.repo.FindRefreshToken(oldHash)
+	rt, err := s.repo.FindRefreshTokenAny(oldHash)
 	if err != nil {
 		return nil, errors.New("invalid refresh token")
+	}
+
+	// Reuse of a rotated (revoked) token → kill the whole session family
+	if rt.IsRevoked {
+		_ = s.repo.RevokeFamily(rt.FamilyID)
+		return nil, errors.New("invalid refresh token")
+	}
+	if time.Now().After(rt.ExpiresAt) {
+		_ = s.repo.RevokeFamily(rt.FamilyID)
+		return nil, errors.New("invalid refresh token")
+	}
+
+	familyID := rt.FamilyID
+	if familyID == uuid.Nil {
+		familyID = uuid.New()
 	}
 
 	// 🔒 Revoke old refresh token (rotation)
@@ -281,9 +297,10 @@ func (s *AuthService) RefreshAccessToken(
 		return nil, err
 	}
 
-	// Store new refresh token hash
+	// Store new refresh token hash in the same family
 	if err := s.repo.CreateRefreshToken(&models.RefreshToken{
 		UserID:    rt.UserID,
+		FamilyID:  familyID,
 		Token:     utils.HashToken(newRefresh),
 		ExpiresAt: time.Now().Add(s.cfg.JWT.RefreshExpiry),
 	}); err != nil {
@@ -314,7 +331,12 @@ func (s *AuthService) Logout(
 	ip string,
 	userAgent string,
 ) error {
-	return s.repo.RevokeRefreshToken(utils.HashToken(refreshRaw))
+	hash := utils.HashToken(refreshRaw)
+	rt, err := s.repo.FindRefreshTokenAny(hash)
+	if err != nil {
+		return nil // already logged out / unknown cookie
+	}
+	return s.repo.RevokeFamily(rt.FamilyID)
 }
 
 /*
@@ -369,6 +391,18 @@ func (s *AuthService) ChangePassword(
 		return err
 	}
 
+	return nil
+}
+
+// VerifyPassword checks the current password without mutating session state.
+func (s *AuthService) VerifyPassword(userID uuid.UUID, password string) error {
+	user, err := s.repo.FindUserByID(userID)
+	if err != nil {
+		return errors.New("user not found")
+	}
+	if err := utils.CheckPassword(password, user.Password); err != nil {
+		return errors.New("incorrect password")
+	}
 	return nil
 }
 
@@ -778,6 +812,7 @@ func (s *AuthService) issueTokens(user *models.User) (*LoginResponse, error) {
 
 	if err := s.repo.CreateRefreshToken(&models.RefreshToken{
 		UserID:    user.ID,
+		FamilyID:  uuid.New(),
 		Token:     utils.HashToken(refreshRaw),
 		ExpiresAt: time.Now().Add(s.cfg.JWT.RefreshExpiry),
 	}); err != nil {

@@ -1,0 +1,3 @@
+-- Empty file removed from active migration path.
+-- Notification preferences are managed via GORM models + goose going forward.
+-- See database/migrations/ for the versioned SoT.

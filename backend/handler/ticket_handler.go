@@ -732,10 +732,11 @@ func (h *TicketHandler) ListTicketComments(c *gin.Context) {
 		return
 	}
 
+	userID := c.MustGet("user_id").(uuid.UUID)
 	role := c.MustGet("user_role").(models.Role)
-	comments, err := h.service.ListTicketComments(ticketID, role)
+	comments, err := h.service.ListTicketComments(ticketID, userID, role)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		utils.ErrorResponse(c, err, "failed to list comments")
 		return
 	}
 	if comments == nil {
@@ -762,7 +763,7 @@ func (h *TicketHandler) AddTicketComment(c *gin.Context) {
 		req.IsInternal,
 	)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		utils.ErrorResponse(c, err, "failed to add comment")
 		return
 	}
 	c.JSON(http.StatusCreated, comment)

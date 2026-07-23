@@ -26,7 +26,7 @@ Client (Vercel SPA) → Nginx:8081 (gateway) → api:8080 → Postgres (single D
 
 | Mechanism | Role |
 |---|---|
-| `database.Migrate` (GORM AutoMigrate) | Source of truth at API boot |
+| `database.Migrate` | goose in production (`MIGRATE_MODE=goose`); AutoMigrate locally (`auto`) |
 | `migrations/*.sql` | Manual/reference only; keep in sync with models; no empty files |
 | `schema.sql` | Snapshot reference |
 

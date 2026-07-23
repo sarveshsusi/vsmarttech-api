@@ -1,14 +1,47 @@
 package database
 
 import (
+	"database/sql"
+	"embed"
+	"fmt"
 	"log"
 
-	"rbac/models"
-
+	"github.com/pressly/goose/v3"
 	"gorm.io/gorm"
+
+	"rbac/models"
 )
 
-func Migrate(db *gorm.DB) {
+//go:embed migrations/*.sql
+var gooseMigrations embed.FS
+
+// Migrate applies schema changes according to mode:
+//   - "auto": GORM AutoMigrate (local/dev)
+//   - "goose": versioned SQL via goose (production default)
+//
+// For goose mode on a brand-new database (no users table), AutoMigrate runs once
+// to create the baseline schema, then goose applies forward migrations.
+func Migrate(db *gorm.DB, mode string) {
+	switch mode {
+	case "goose":
+		if !db.Migrator().HasTable(&models.User{}) {
+			log.Println("goose mode: empty database — applying AutoMigrate baseline once")
+			autoMigrate(db)
+		}
+		if err := runGoose(db); err != nil {
+			log.Fatalf("goose migration failed: %v", err)
+		}
+		syncEngineerIDs(db)
+		log.Println("Database migration completed (goose)")
+	default: // auto
+		autoMigrate(db)
+		backfillRefreshTokenFamilyIDs(db)
+		syncEngineerIDs(db)
+		log.Println("Database migration completed (auto)")
+	}
+}
+
+func autoMigrate(db *gorm.DB) {
 	err := db.AutoMigrate(
 
 		/* =========================
@@ -77,13 +110,39 @@ func Migrate(db *gorm.DB) {
 	)
 
 	if err != nil {
-		log.Fatalf("❌ Database migration failed: %v", err)
+		log.Fatalf("Database AutoMigrate failed: %v", err)
 	}
+}
 
-	log.Println("✅ Database migration completed successfully")
+func backfillRefreshTokenFamilyIDs(db *gorm.DB) {
+	res := db.Exec(`
+		UPDATE refresh_tokens
+		SET family_id = id
+		WHERE family_id IS NULL
+		   OR family_id = '00000000-0000-0000-0000-000000000000'
+	`)
+	if res.Error != nil {
+		log.Printf("warning: refresh_tokens family_id backfill: %v", res.Error)
+	}
+}
 
-	// Post-migration: Sync engineer_id from ticket_assignments to tickets
-	syncEngineerIDs(db)
+func runGoose(db *gorm.DB) error {
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fmt.Errorf("get sql.DB: %w", err)
+	}
+	return runGooseSQL(sqlDB)
+}
+
+func runGooseSQL(sqlDB *sql.DB) error {
+	if err := goose.SetDialect("postgres"); err != nil {
+		return err
+	}
+	goose.SetBaseFS(gooseMigrations)
+	if err := goose.Up(sqlDB, "migrations"); err != nil {
+		return err
+	}
+	return nil
 }
 
 // syncEngineerIDs ensures tickets have engineer_id set from ticket_assignments
@@ -98,8 +157,8 @@ func syncEngineerIDs(db *gorm.DB) {
 	`)
 
 	if result.Error != nil {
-		log.Printf("⚠️ Failed to sync engineer IDs: %v", result.Error)
+		log.Printf("warning: failed to sync engineer IDs: %v", result.Error)
 	} else if result.RowsAffected > 0 {
-		log.Printf("✅ Synced engineer_id for %d tickets", result.RowsAffected)
+		log.Printf("Synced engineer_id for %d tickets", result.RowsAffected)
 	}
 }

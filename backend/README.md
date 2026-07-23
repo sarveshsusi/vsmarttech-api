@@ -72,9 +72,9 @@ Full OpenAPI stub: [openapi.yaml](./openapi.yaml).
 
 ## Migrations
 
-- Runtime schema: GORM `AutoMigrate` on API boot (`database.Migrate`).
-- SQL under `migrations/` is reference/manual only — do not run conflicting ad-hoc SQL without coordinating AutoMigrate.
-- Checklist before production schema change: add model field → AutoMigrate in staging → document in PR → avoid empty/orphan migration files.
+- Runtime schema: goose migrations in `database/migrations/` when `MIGRATE_MODE=goose` (production default). Local default is `MIGRATE_MODE=auto` (GORM AutoMigrate).
+- Legacy SQL under `migrations/` is historical reference only.
+- Checklist before production schema change: add goose SQL → test on staging → deploy API (workers do not migrate).
 
 ## Security
 

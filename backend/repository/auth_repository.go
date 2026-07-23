@@ -96,6 +96,9 @@ func (r *AuthRepository) UpdateUserPassword(
 ===================== */
 
 func (r *AuthRepository) CreateRefreshToken(rt *models.RefreshToken) error {
+	if rt.FamilyID == uuid.Nil {
+		rt.FamilyID = uuid.New()
+	}
 	return r.db.Create(rt).Error
 }
 
@@ -103,6 +106,21 @@ func (r *AuthRepository) RevokeAllUserTokens(userID uuid.UUID) error {
 	return r.db.Model(&models.RefreshToken{}).
 		Where("user_id = ?", userID).
 		Update("is_revoked", true).Error
+}
+
+// FindRefreshTokenAny looks up a refresh token by hash including revoked rows.
+// Expired tokens are still returned so callers can distinguish reuse vs unknown.
+func (r *AuthRepository) FindRefreshTokenAny(tokenHash string) (*models.RefreshToken, error) {
+	var rt models.RefreshToken
+	err := r.db.
+		Preload("User").
+		Where("token = ?", tokenHash).
+		First(&rt).
+		Error
+	if err != nil {
+		return nil, errors.New("invalid or expired refresh token")
+	}
+	return &rt, nil
 }
 
 func (r *AuthRepository) FindRefreshToken(tokenHash string) (*models.RefreshToken, error) {
@@ -123,6 +141,12 @@ func (r *AuthRepository) FindRefreshToken(tokenHash string) (*models.RefreshToke
 	}
 
 	return &rt, nil
+}
+
+func (r *AuthRepository) RevokeFamily(familyID uuid.UUID) error {
+	return r.db.Model(&models.RefreshToken{}).
+		Where("family_id = ? AND is_revoked = false", familyID).
+		Update("is_revoked", true).Error
 }
 
 func (r *AuthRepository) RevokeRefreshToken(tokenHash string) error {

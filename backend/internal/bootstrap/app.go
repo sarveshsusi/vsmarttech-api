@@ -47,7 +47,7 @@ func New(opts Options) (*App, error) {
 	}
 
 	if opts.Migrate {
-		database.Migrate(database.DB)
+		database.Migrate(database.DB, cfg.Database.MigrateMode)
 	}
 
 	db := database.DB

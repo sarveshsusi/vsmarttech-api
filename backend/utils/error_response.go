@@ -36,6 +36,12 @@ func ErrorResponse(c *gin.Context, err error, defaultMsg string) {
 	} else if strings.Contains(err.Error(), "invalid") || strings.Contains(err.Error(), "Invalid") {
 		statusCode = http.StatusBadRequest
 		publicMsg = "invalid request"
+	} else if strings.Contains(err.Error(), "access denied") || strings.Contains(err.Error(), "not found or access denied") {
+		statusCode = http.StatusForbidden
+		publicMsg = "ticket not found or access denied"
+	} else if strings.Contains(err.Error(), "not found") {
+		statusCode = http.StatusNotFound
+		publicMsg = "resource not found"
 	} else if strings.Contains(err.Error(), "permission") || strings.Contains(err.Error(), "forbidden") || strings.Contains(err.Error(), "Forbidden") {
 		statusCode = http.StatusForbidden
 		publicMsg = "access denied"

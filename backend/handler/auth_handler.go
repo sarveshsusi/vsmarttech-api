@@ -76,6 +76,10 @@ type ChangePasswordRequest struct {
 	NewPassword string `json:"new_password" binding:"required,min=8"`
 }
 
+type VerifyPasswordRequest struct {
+	Password string `json:"password" binding:"required"`
+}
+
 type UpdateProfileRequest struct {
 	Name string `json:"name" binding:"required,min=2,max=120"`
 }
@@ -303,6 +307,23 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 
 	h.clearRefreshCookie(c)
 	c.JSON(http.StatusOK, gin.H{"message": "password changed, login again"})
+}
+
+// VerifyPassword re-checks the current user's password without rotating sessions.
+// Used for step-up confirmation (e.g. destructive admin actions).
+func (h *AuthHandler) VerifyPassword(c *gin.Context) {
+	var req VerifyPasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "password is required"})
+		return
+	}
+
+	userID := c.MustGet("user_id").(uuid.UUID)
+	if err := h.service.VerifyPassword(userID, req.Password); err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "incorrect password"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 // Update own profile (name)

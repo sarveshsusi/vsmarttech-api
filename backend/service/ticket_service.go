@@ -1374,9 +1374,13 @@ func (s *TicketService) ListRecentTicketEvents(filter repository.RecentEventsFil
    TICKET COMMENTS / NOTES
 ========================= */
 
-func (s *TicketService) ListTicketComments(ticketID string, role models.Role) ([]models.TicketComment, error) {
-	if _, err := s.ticketRepo.GetByID(ticketID); err != nil {
-		return nil, errors.New("ticket not found")
+func (s *TicketService) ListTicketComments(ticketID string, userID uuid.UUID, role models.Role) ([]models.TicketComment, error) {
+	ticket, err := s.ticketRepo.GetByID(ticketID)
+	if err != nil {
+		return nil, errors.New("ticket not found or access denied")
+	}
+	if err := s.assertCommentAccess(ticket, userID, role); err != nil {
+		return nil, err
 	}
 	includeInternal := role == models.RoleAdmin || role == models.RoleSupport
 	return s.ticketRepo.ListComments(ticketID, includeInternal)
@@ -1397,8 +1401,12 @@ func (s *TicketService) AddTicketComment(
 		return nil, errors.New("comment is too long")
 	}
 
-	if _, err := s.ticketRepo.GetByID(ticketID); err != nil {
-		return nil, errors.New("ticket not found")
+	ticket, err := s.ticketRepo.GetByID(ticketID)
+	if err != nil {
+		return nil, errors.New("ticket not found or access denied")
+	}
+	if err := s.assertCommentAccess(ticket, userID, role); err != nil {
+		return nil, err
 	}
 
 	if isInternal && role != models.RoleAdmin && role != models.RoleSupport {
@@ -1419,4 +1427,22 @@ func (s *TicketService) AddTicketComment(
 		return nil, err
 	}
 	return s.ticketRepo.GetCommentByID(comment.ID)
+}
+
+// assertCommentAccess: admin any ticket; support only if assigned engineer.
+func (s *TicketService) assertCommentAccess(ticket *models.Ticket, userID uuid.UUID, role models.Role) error {
+	if role == models.RoleAdmin {
+		return nil
+	}
+	if role == models.RoleSupport {
+		engineer, err := s.resolveSupportEngineer(userID)
+		if err != nil {
+			return errors.New("ticket not found or access denied")
+		}
+		if ticket.EngineerID == nil || *ticket.EngineerID != engineer.ID {
+			return errors.New("ticket not found or access denied")
+		}
+		return nil
+	}
+	return errors.New("ticket not found or access denied")
 }

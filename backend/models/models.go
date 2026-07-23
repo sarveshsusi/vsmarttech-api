@@ -50,6 +50,7 @@ type User struct {
 type RefreshToken struct {
 	ID        uuid.UUID `json:"id" gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
 	UserID    uuid.UUID `json:"user_id" gorm:"type:uuid;index;not null"`
+	FamilyID  uuid.UUID `json:"family_id" gorm:"type:uuid;index;not null"`
 	Token     string    `json:"-" gorm:"uniqueIndex;not null"` // 🔒 never expose
 	ExpiresAt time.Time `json:"expires_at" gorm:"not null"`
 	IsRevoked bool      `json:"is_revoked" gorm:"default:false"`

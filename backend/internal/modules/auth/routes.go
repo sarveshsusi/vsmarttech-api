@@ -25,6 +25,7 @@ func RegisterProtected(protected *gin.RouterGroup, h *handler.AuthHandler) {
 	protected.GET("/profile", h.GetMe)
 	protected.PUT("/profile", h.UpdateProfile)
 	protected.POST("/change-password", h.ChangePassword)
+	protected.POST("/verify-password", h.VerifyPassword)
 	protected.POST("/2fa/enable", h.Enable2FA)
 	protected.POST("/2fa/disable", h.Disable2FA)
 }

@@ -73,7 +73,7 @@ jobs:
 
             echo "Running health check..."
             for i in 1 2 3 4 5 6; do
-              if curl -fsS http://127.0.0.1:8081/healthz; then
+              if curl -fsS http://127.0.0.1:8081/readyz && curl -fsS http://127.0.0.1:8081/healthz; then
                 echo "===== Deployment Successful ====="
                 exit 0
               fi
