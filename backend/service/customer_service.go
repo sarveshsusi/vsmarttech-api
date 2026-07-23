@@ -16,6 +16,7 @@ type CustomerService struct {
 	authRepo     *repository.AuthRepository
 	customerRepo *repository.CustomerRepository
 	ticketRepo   *repository.TicketRepository
+	feedbackRepo *repository.FeedbackRepository
 }
 
 func NewCustomerService(
@@ -29,7 +30,36 @@ func NewCustomerService(
 		authRepo:     authRepo,
 		customerRepo: customerRepo,
 		ticketRepo:   ticketRepo,
+		feedbackRepo: repository.NewFeedbackRepository(db),
 	}
+}
+
+func (s *CustomerService) attachFeedback(tickets []models.Ticket) []models.Ticket {
+	if len(tickets) == 0 || s.feedbackRepo == nil {
+		return tickets
+	}
+	ids := make([]string, 0, len(tickets))
+	for _, t := range tickets {
+		ids = append(ids, t.ID)
+	}
+	rows, err := s.feedbackRepo.GetByTicketIDs(ids)
+	if err != nil {
+		return tickets
+	}
+	for i := range tickets {
+		if fb, ok := rows[tickets[i].ID]; ok {
+			summary := models.TicketFeedbackSummary{
+				ID:             fb.ID,
+				FeedbackStatus: fb.FeedbackStatus,
+				Rating:         fb.Rating,
+				Remarks:        fb.Remarks,
+				SubmittedAt:    fb.SubmittedAt,
+				CreatedAt:      fb.CreatedAt,
+			}
+			tickets[i].Feedback = &summary
+		}
+	}
+	return tickets
 }
 
 // =========================
@@ -112,7 +142,11 @@ func (s *CustomerService) GetAllCustomers(
 func (s *CustomerService) GetCustomerTickets(
 	customerID uuid.UUID,
 ) ([]models.Ticket, error) {
-	return s.ticketRepo.GetByCustomerID(customerID)
+	tickets, err := s.ticketRepo.GetByCustomerID(customerID)
+	if err != nil {
+		return nil, err
+	}
+	return s.attachFeedback(tickets), nil
 }
 
 // =========================
@@ -127,7 +161,11 @@ func (s *CustomerService) GetMyTickets(
 		return nil, errors.New("customer profile not found")
 	}
 
-	return s.ticketRepo.GetByCustomerID(customer.ID)
+	tickets, err := s.ticketRepo.GetByCustomerID(customer.ID)
+	if err != nil {
+		return nil, err
+	}
+	return s.attachFeedback(tickets), nil
 }
 
 // =========================

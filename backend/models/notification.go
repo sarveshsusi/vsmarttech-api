@@ -30,6 +30,8 @@ const (
 
 	// Admin daily summary notifications
 	NotificationTypeAdminExpiryAlert NotificationType = "admin_expiry_alert"
+
+	NotificationTypeFeedbackReceived NotificationType = "feedback_received"
 )
 
 /* =========================

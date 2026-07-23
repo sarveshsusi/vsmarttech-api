@@ -655,6 +655,89 @@ func (s *NotificationService) NotifyTicketClosed(
 }
 
 /* =========================
+   FEEDBACK RECEIVED NOTIFICATION
+========================= */
+
+func (s *NotificationService) NotifyFeedbackReceived(fb *models.TicketFeedback) error {
+	if fb == nil {
+		return nil
+	}
+	log.Printf("[NOTIFY_FEEDBACK] Starting for ticketID=%s feedbackID=%s", fb.TicketID, fb.ID)
+
+	ticket, err := s.ticketRepo.GetByID(fb.TicketID)
+	if err != nil {
+		log.Printf("[NOTIFY_FEEDBACK_ERROR] Failed to get ticket: %v", err)
+		return err
+	}
+
+	customerName := "A customer"
+	var customer models.Customer
+	if err := s.db.Where("id = ?", fb.CustomerID).First(&customer).Error; err == nil {
+		if customer.Name != "" {
+			customerName = customer.Name
+		} else if customer.ContactPerson != "" {
+			customerName = customer.ContactPerson
+		}
+	}
+
+	rating := 0
+	if fb.Rating != nil {
+		rating = *fb.Rating
+	}
+	stars := strings.Repeat("⭐", rating)
+	if stars == "" {
+		stars = "n/a"
+	}
+
+	remarksPart := ""
+	if strings.TrimSpace(fb.Remarks) != "" {
+		remarksPart = " Remarks: " + fb.Remarks
+	}
+
+	engineerMsg := fmt.Sprintf("%s rated your service %s%s", customerName, stars, remarksPart)
+	adminMsg := fmt.Sprintf("New customer feedback on ticket %s: %s rated %s.%s",
+		fb.TicketID, customerName, stars, remarksPart)
+
+	// Notify engineer
+	var eng models.SupportEngineer
+	if err := s.db.Where("id = ?", fb.EngineerID).First(&eng).Error; err == nil && eng.UserID != uuid.Nil {
+		if err := s.CreateTicketNotification(
+			eng.UserID,
+			fb.TicketID,
+			models.NotificationTypeFeedbackReceived,
+			"New Customer Feedback",
+			engineerMsg,
+			nil,
+			nil,
+		); err != nil {
+			log.Printf("[NOTIFY_FEEDBACK_ERROR] Failed to notify engineer: %v", err)
+		}
+	}
+
+	// Notify admins
+	adminUsers, err := s.userRepo.GetUsersByRole(models.RoleAdmin)
+	if err == nil {
+		for _, admin := range adminUsers {
+			if err := s.CreateTicketNotification(
+				admin.ID,
+				fb.TicketID,
+				models.NotificationTypeFeedbackReceived,
+				"New Customer Feedback",
+				adminMsg,
+				nil,
+				nil,
+			); err != nil {
+				log.Printf("[NOTIFY_FEEDBACK_ERROR] Failed to notify admin %s: %v", admin.ID, err)
+			}
+		}
+	}
+
+	_ = ticket
+	log.Printf("[NOTIFY_FEEDBACK_SUCCESS] ticketID=%s", fb.TicketID)
+	return nil
+}
+
+/* =========================
    GET USER NOTIFICATIONS
 ========================= */
 

@@ -14,6 +14,8 @@ type SupportService struct {
 	ticketRepo          *repository.TicketRepository
 	supportEngineerRepo *repository.SupportEngineerRepository
 	visitRepo           *repository.ServiceVisitRepository
+	feedbackRepo        *repository.FeedbackRepository
+	db                  *gorm.DB
 }
 
 /* =========================
@@ -29,6 +31,8 @@ func NewSupportService(
 		ticketRepo:          ticketRepo,
 		supportEngineerRepo: supportEngineerRepo,
 		visitRepo:           repository.NewServiceVisitRepository(db),
+		feedbackRepo:        repository.NewFeedbackRepository(db),
+		db:                  db,
 	}
 }
 
@@ -65,6 +69,24 @@ func (s *SupportService) GetMyTickets(
 		if countErr == nil {
 			for i := range tickets {
 				tickets[i].VisitCount = counts[tickets[i].ID]
+			}
+		}
+		if s.feedbackRepo != nil {
+			rows, fbErr := s.feedbackRepo.GetByTicketIDs(ids)
+			if fbErr == nil {
+				for i := range tickets {
+					if fb, ok := rows[tickets[i].ID]; ok {
+						summary := models.TicketFeedbackSummary{
+							ID:             fb.ID,
+							FeedbackStatus: fb.FeedbackStatus,
+							Rating:         fb.Rating,
+							Remarks:        fb.Remarks,
+							SubmittedAt:    fb.SubmittedAt,
+							CreatedAt:      fb.CreatedAt,
+						}
+						tickets[i].Feedback = &summary
+					}
+				}
 			}
 		}
 	}

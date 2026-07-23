@@ -21,6 +21,7 @@ type TicketService struct {
 	customerRepo         *repository.CustomerRepository
 	customerSolutionRepo *repository.CustomerSolutionRepository
 	notificationService  *NotificationService
+	feedbackService      *FeedbackService
 	escalationRepo       *repository.TicketEscalationRepository
 	visitRepo            *repository.ServiceVisitRepository
 }
@@ -81,6 +82,44 @@ func NewTicketService(
 		notificationService:  notificationService,
 		escalationRepo:       repository.NewTicketEscalationRepository(db),
 		visitRepo:            repository.NewServiceVisitRepository(db),
+	}
+}
+
+func (s *TicketService) SetFeedbackService(fs *FeedbackService) {
+	s.feedbackService = fs
+}
+
+func (s *TicketService) attachFeedback(ticket *models.Ticket) {
+	if ticket == nil || s.feedbackService == nil {
+		return
+	}
+	summaries, err := s.feedbackService.SummariesForTickets([]string{ticket.ID})
+	if err != nil {
+		return
+	}
+	if summary, ok := summaries[ticket.ID]; ok {
+		cp := summary
+		ticket.Feedback = &cp
+	}
+}
+
+func (s *TicketService) attachFeedbackMany(tickets []models.Ticket) {
+	if len(tickets) == 0 || s.feedbackService == nil {
+		return
+	}
+	ids := make([]string, 0, len(tickets))
+	for i := range tickets {
+		ids = append(ids, tickets[i].ID)
+	}
+	summaries, err := s.feedbackService.SummariesForTickets(ids)
+	if err != nil {
+		return
+	}
+	for i := range tickets {
+		if summary, ok := summaries[tickets[i].ID]; ok {
+			cp := summary
+			tickets[i].Feedback = &cp
+		}
 	}
 }
 
@@ -536,6 +575,12 @@ func (s *TicketService) CloseTicket(
 		log.Printf("[CLOSE_TICKET] Escalations resolved for ticket %s", ticketID)
 	}
 
+	if s.feedbackService != nil {
+		if fbErr := s.feedbackService.EnsurePendingOnClose(ticket, engineer.ID); fbErr != nil {
+			log.Printf("[CLOSE_TICKET_WARN] Failed to create pending feedback for ticket %s: %v", ticketID, fbErr)
+		}
+	}
+
 	log.Printf("[CLOSE_TICKET_SUCCESS] Ticket closed successfully")
 	return nil
 }
@@ -628,6 +673,12 @@ func (s *TicketService) AdminCloseTicket(
 		log.Printf("[ADMIN_CLOSE_TICKET] Escalations resolved for ticket %s", ticketID)
 	}
 
+	if s.feedbackService != nil && ticket.EngineerID != nil {
+		if fbErr := s.feedbackService.EnsurePendingOnClose(ticket, *ticket.EngineerID); fbErr != nil {
+			log.Printf("[ADMIN_CLOSE_TICKET_WARN] Failed to create pending feedback for ticket %s: %v", ticketID, fbErr)
+		}
+	}
+
 	log.Printf("[ADMIN_CLOSE_TICKET_SUCCESS] Ticket closed successfully by admin")
 	return nil
 }
@@ -636,7 +687,12 @@ func (s *TicketService) AdminCloseTicket(
 // ADMIN: GET ALL TICKETS
 // =========================
 func (s *TicketService) GetAll() ([]models.Ticket, error) {
-	return s.ticketRepo.GetAll()
+	tickets, err := s.ticketRepo.GetAll()
+	if err != nil {
+		return nil, err
+	}
+	s.attachFeedbackMany(tickets)
+	return tickets, nil
 }
 
 func (s *TicketService) AdminCreateTicketAndAssign(
@@ -873,6 +929,7 @@ func (s *TicketService) GetTicketById(ticketID string, userID uuid.UUID) (*model
 		return nil, errors.New("ticket not found or access denied")
 	}
 
+	s.attachFeedback(ticket)
 	return ticket, nil
 }
 
@@ -1031,6 +1088,7 @@ func (s *TicketService) GetAllWithVisitCounts() ([]models.Ticket, error) {
 	if err := s.AttachVisitCounts(tickets); err != nil {
 		log.Printf("[GET_ADMIN_TICKETS] visit count attach failed: %v", err)
 	}
+	s.attachFeedbackMany(tickets)
 	return tickets, nil
 }
 

@@ -127,7 +127,8 @@ func wireHTTP(
 	ticketService := service.NewTicketService(db, ticketRepo, customerRepo, customerSolutionRepo, notificationService)
 	supportService := service.NewSupportService(ticketRepo, supportEngineerRepo, db)
 	adminService := service.NewAdminService(dashboardRepo)
-	feedbackService := service.NewFeedbackService(feedbackRepo, ticketRepo, customerRepo)
+	feedbackService := service.NewFeedbackService(feedbackRepo, ticketRepo, customerRepo, supportEngineerRepo, notificationService, db)
+	ticketService.SetFeedbackService(feedbackService)
 	supportEngineerService := service.NewSupportEngineerService(supportEngineerRepo)
 	amcService := service.NewAMCAssignmentService(amcRepo, notificationService, customerSolutionRepo)
 	app.AMCAssignmentService = amcService

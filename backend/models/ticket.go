@@ -82,7 +82,8 @@ type Ticket struct {
 	Attachments []TicketAttachment `gorm:"foreignKey:TicketID" json:"attachments,omitempty"`
 
 	// Populated at read time (not a DB column)
-	VisitCount int `json:"visit_count" gorm:"-"`
+	VisitCount int                    `json:"visit_count" gorm:"-"`
+	Feedback   *TicketFeedbackSummary `json:"feedback,omitempty" gorm:"-"`
 
 	CreatedBy uuid.UUID `json:"created_by"`
 	CreatedAt time.Time `json:"created_at"`
@@ -203,15 +204,44 @@ func (TicketAttachment) TableName() string {
    FEEDBACK
 ========================= */
 
+type FeedbackStatus string
+
+const (
+	FeedbackStatusPending   FeedbackStatus = "Pending"
+	FeedbackStatusSubmitted FeedbackStatus = "Submitted"
+)
+
 type TicketFeedback struct {
-	ID         uuid.UUID `json:"id" gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	TicketID   string    `json:"ticket_id" gorm:"type:varchar(20)"`
-	EngineerID uuid.UUID `json:"engineer_id" gorm:"type:uuid"`
-	Rating     int       `json:"rating"`
-	Comment    string    `json:"comment"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID             uuid.UUID      `json:"id" gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	TicketID       string         `json:"ticket_id" gorm:"type:varchar(20);uniqueIndex"`
+	EngineerID     uuid.UUID      `json:"engineer_id" gorm:"type:uuid;index"`
+	CustomerID     uuid.UUID      `json:"customer_id" gorm:"type:uuid;index"`
+	CompanyID      uuid.UUID      `json:"company_id" gorm:"type:uuid;index"`
+	Rating         *int           `json:"rating,omitempty"`
+	Remarks        string         `json:"remarks" gorm:"type:varchar(500)"`
+	FeedbackStatus FeedbackStatus `json:"feedback_status" gorm:"type:varchar(20);index;default:'Pending'"`
+	SubmittedAt    *time.Time     `json:"submitted_at,omitempty"`
+	Metadata       string         `json:"metadata,omitempty" gorm:"type:jsonb;default:'{}'"`
+	CreatedAt      time.Time      `json:"created_at"`
+	UpdatedAt      time.Time      `json:"updated_at"`
+
+	// Optional joins for API responses
+	Engineer *SupportEngineer `json:"engineer,omitempty" gorm:"foreignKey:EngineerID"`
+	Customer *Customer        `json:"customer,omitempty" gorm:"foreignKey:CustomerID"`
+	Company  *Company         `json:"company,omitempty" gorm:"foreignKey:CompanyID"`
+	Ticket   *Ticket          `json:"ticket,omitempty" gorm:"foreignKey:TicketID;references:ID"`
 }
 
 func (TicketFeedback) TableName() string {
 	return "ticket_feedbacks"
+}
+
+// TicketFeedbackSummary is embedded on ticket JSON payloads (not a DB column).
+type TicketFeedbackSummary struct {
+	ID             uuid.UUID      `json:"id"`
+	FeedbackStatus FeedbackStatus `json:"feedback_status"`
+	Rating         *int           `json:"rating,omitempty"`
+	Remarks        string         `json:"remarks,omitempty"`
+	SubmittedAt    *time.Time     `json:"submitted_at,omitempty"`
+	CreatedAt      time.Time      `json:"created_at"`
 }

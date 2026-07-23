@@ -404,17 +404,22 @@ func (r *DashboardRepository) FetchOpsKPIs(windowDays int) (*OpsKPIs, error) {
 		  AND target_at < NOW()
 	`).Scan(&out.OpenBreached).Error
 
-	// CSAT
+	// CSAT (submitted feedback only)
 	var csat *float64
 	_ = r.db.Raw(`
 		SELECT AVG(rating)::float FROM ticket_feedbacks
-		WHERE created_at >= ?
+		WHERE feedback_status = 'Submitted'
+		  AND rating IS NOT NULL
+		  AND COALESCE(submitted_at, created_at) >= ?
 	`, since).Scan(&csat).Error
 	if csat != nil {
 		out.CSATAverage = round2(*csat)
 	}
 	_ = r.db.Raw(`
-		SELECT COUNT(*) FROM ticket_feedbacks WHERE created_at >= ?
+		SELECT COUNT(*) FROM ticket_feedbacks
+		WHERE feedback_status = 'Submitted'
+		  AND rating IS NOT NULL
+		  AND COALESCE(submitted_at, created_at) >= ?
 	`, since).Scan(&out.CSATCount).Error
 
 	return out, nil

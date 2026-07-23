@@ -38,9 +38,51 @@ func Migrate(db *gorm.DB, mode string) {
 		ensureRefreshTokenFamilyIDColumn(db)
 		autoMigrate(db)
 		backfillRefreshTokenFamilyIDs(db)
+		backfillTicketFeedbackLifecycle(db)
 		syncEngineerIDs(db)
 		log.Println("Database migration completed (auto)")
 	}
+}
+
+// backfillTicketFeedbackLifecycle migrates legacy ticket_feedbacks rows for AutoMigrate mode.
+func backfillTicketFeedbackLifecycle(db *gorm.DB) {
+	if !db.Migrator().HasTable("ticket_feedbacks") {
+		return
+	}
+	_ = db.Exec(`ALTER TABLE ticket_feedbacks ALTER COLUMN rating DROP NOT NULL`).Error
+	_ = db.Exec(`
+		UPDATE ticket_feedbacks
+		SET remarks = LEFT(COALESCE(NULLIF(TRIM(comment), ''), remarks), 500)
+		WHERE EXISTS (
+			SELECT 1 FROM information_schema.columns
+			WHERE table_name = 'ticket_feedbacks' AND column_name = 'comment'
+		)
+		AND (remarks IS NULL OR remarks = '')
+		AND comment IS NOT NULL AND TRIM(comment) <> ''
+	`).Error
+	_ = db.Exec(`
+		UPDATE ticket_feedbacks
+		SET
+			feedback_status = 'Submitted',
+			submitted_at = COALESCE(submitted_at, created_at),
+			updated_at = COALESCE(updated_at, created_at, NOW())
+		WHERE rating IS NOT NULL AND rating >= 1
+		  AND (feedback_status IS NULL OR feedback_status = '' OR feedback_status = 'Pending')
+		  AND submitted_at IS NULL
+	`).Error
+	_ = db.Exec(`
+		UPDATE ticket_feedbacks tf
+		SET
+			customer_id = t.customer_id,
+			company_id = c.company_id
+		FROM tickets t
+		JOIN customers c ON c.id = t.customer_id
+		WHERE tf.ticket_id = t.id
+		  AND (tf.customer_id IS NULL OR tf.company_id IS NULL
+		       OR tf.customer_id = '00000000-0000-0000-0000-000000000000'
+		       OR tf.company_id = '00000000-0000-0000-0000-000000000000')
+	`).Error
+	_ = db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_ticket_feedbacks_ticket_id_unique ON ticket_feedbacks (ticket_id)`).Error
 }
 
 // ensureRefreshTokenFamilyIDColumn adds family_id as nullable, backfills from id,

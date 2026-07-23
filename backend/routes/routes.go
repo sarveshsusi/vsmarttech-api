@@ -91,6 +91,7 @@ func SetupRoutes(
 
 		ticketHandlers := modtickets.Handlers{Ticket: ticketHandler, Feedback: feedbackHandler}
 		modtickets.RegisterCommon(protected, ticketHandlers)
+		modtickets.RegisterFeedback(protected, ticketHandlers)
 		modnotify.Register(protected, notificationHandler)
 
 		crmHandlers := modcrm.Handlers{
@@ -113,6 +114,7 @@ func SetupRoutes(
 			modcrm.RegisterAdmin(admin, crmHandlers)
 			modamc.RegisterAdmin(admin, amcHandlers)
 			modtickets.RegisterAdmin(admin, ticketHandlers)
+			modtickets.RegisterAdminFeedback(admin, ticketHandlers)
 			admin.GET("/audit-logs", auditHandler.List)
 		}
 
