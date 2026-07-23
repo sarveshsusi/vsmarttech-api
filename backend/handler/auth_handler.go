@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -83,33 +84,47 @@ type UpdateProfileRequest struct {
    Cookie Helpers
 ===================== */
 
-func (h *AuthHandler) setRefreshCookie(c *gin.Context, token string) {
-	secure := h.cfg.Server.Env == "production"
+func (h *AuthHandler) cookieSameSite() http.SameSite {
+	switch strings.ToLower(h.cfg.Server.CookieSameSite) {
+	case "none":
+		return http.SameSiteNoneMode
+	case "strict":
+		return http.SameSiteStrictMode
+	default:
+		return http.SameSiteLaxMode
+	}
+}
 
-	// SameSite=Strict blocks cross-site cookie sends (CSRF on /auth/refresh)
-	c.SetSameSite(http.SameSiteStrictMode)
+// cookieSecure is true in production, and always when SameSite=None (browser requirement).
+func (h *AuthHandler) cookieSecure() bool {
+	if h.cookieSameSite() == http.SameSiteNoneMode {
+		return true
+	}
+	return h.cfg.Server.Env == "production"
+}
+
+func (h *AuthHandler) setRefreshCookie(c *gin.Context, token string) {
+	c.SetSameSite(h.cookieSameSite())
 	c.SetCookie(
 		"refresh_token",
 		token,
 		int(h.cfg.JWT.RefreshExpiry.Seconds()),
 		"/",
 		"",
-		secure,
+		h.cookieSecure(),
 		true, // HttpOnly
 	)
 }
 
 func (h *AuthHandler) clearRefreshCookie(c *gin.Context) {
-	secure := h.cfg.Server.Env == "production"
-
-	c.SetSameSite(http.SameSiteStrictMode)
+	c.SetSameSite(h.cookieSameSite())
 	c.SetCookie(
 		"refresh_token",
 		"",
 		-1,
 		"/",
 		"",
-		secure,
+		h.cookieSecure(),
 		true,
 	)
 }
@@ -512,18 +527,15 @@ func (h *AuthHandler) Verify2FA(c *gin.Context) {
 
 	// 🍪 Set remember-device cookie (ONLY if requested)
 	if rememberToken != nil {
+		c.SetSameSite(h.cookieSameSite())
 		c.SetCookie(
 			"remember_device",
 			*rememberToken,
 			30*24*3600,
 			"/",
 			"",
-			true, // Secure
+			h.cookieSecure(),
 			true, // HttpOnly
-		)
-		c.Writer.Header().Add(
-			"Set-Cookie",
-			"remember_device="+*rememberToken+"; SameSite=Strict",
 		)
 	}
 

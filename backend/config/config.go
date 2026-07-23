@@ -26,7 +26,8 @@ type ServerConfig struct {
 	Env               string
 	RateLimitMax      int // Max requests per minute
 	TrustedProxies    []string
-	RunInProcessCrons bool // When false, SLA/contract crons run in worker containers
+	RunInProcessCrons bool   // When false, SLA/contract crons run in worker containers
+	CookieSameSite    string // none | lax | strict — use none for cross-origin SPA (Vercel ↔ API)
 }
 
 type DatabaseConfig struct {
@@ -137,6 +138,22 @@ func LoadConfig() *Config {
 		}
 	}
 
+	// Cross-origin SPA (e.g. Vercel frontend + Lightsail API) needs SameSite=None + Secure
+	// so the browser sends the refresh cookie on credentialed XHR after a page reload.
+	cookieSameSite := strings.ToLower(strings.TrimSpace(getEnv("COOKIE_SAMESITE", "")))
+	if cookieSameSite == "" {
+		if env == "production" {
+			cookieSameSite = "none"
+		} else {
+			cookieSameSite = "lax"
+		}
+	}
+	switch cookieSameSite {
+	case "none", "lax", "strict":
+	default:
+		log.Fatalf("COOKIE_SAMESITE must be none, lax, or strict (got %q)", cookieSameSite)
+	}
+
 	return &Config{
 		Server: ServerConfig{
 			Port:              getEnv("SERVER_PORT", "8080"),
@@ -144,6 +161,7 @@ func LoadConfig() *Config {
 			RateLimitMax:      getEnvAsInt("RATE_LIMIT_MAX", 60),
 			TrustedProxies:    getEnvCSV("TRUSTED_PROXIES", []string{"nginx", "172.16.0.0/12", "10.0.0.0/8"}),
 			RunInProcessCrons: getEnvAsBool("RUN_INPROCESS_CRONS", true),
+			CookieSameSite:    cookieSameSite,
 		},
 		Database: DatabaseConfig{
 			URL:          dbURL,

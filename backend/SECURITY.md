@@ -18,7 +18,7 @@
 
 - Access tokens: Bearer JWT (HS256), short TTL.
 - Every authenticated request re-loads `is_active` + role from the database (disabled accounts cannot keep using a JWT).
-- Refresh tokens: HttpOnly cookie, `SameSite=Strict`, `Secure` in production; rotated on refresh.
+- Refresh tokens: HttpOnly cookie, `SameSite=None` + `Secure` in production (cross-origin SPA), rotated on refresh.
 - Roles: `admin` | `support` | `customer`.
 - Login: rate-limited (10/min) + IP brute-force guard (5 fails → 15m lock).
 - OTP verify / forgot-password / reset-password: rate-limited (5/min).
