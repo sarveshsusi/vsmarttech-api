@@ -175,6 +175,8 @@ func (h *CustomerSolutionHandler) UpdateCustomerSolution(c *gin.Context) {
 		return
 	}
 
+	adminID := c.MustGet("user_id").(uuid.UUID)
+
 	var req struct {
 		Description  *string              `json:"description"`
 		ContractType *models.ContractType `json:"contract_type"`
@@ -188,6 +190,7 @@ func (h *CustomerSolutionHandler) UpdateCustomerSolution(c *gin.Context) {
 
 		ChargeableType *models.ChargeableType `json:"chargeable_type"`
 		IsActive       *bool                  `json:"is_active"`
+		CustomerName   *string                `json:"customer_name"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -208,6 +211,8 @@ func (h *CustomerSolutionHandler) UpdateCustomerSolution(c *gin.Context) {
 
 		ChargeableType: req.ChargeableType,
 		IsActive:       req.IsActive,
+		CustomerName:   req.CustomerName,
+		ChangedBy:      adminID,
 	})
 
 	if err != nil {

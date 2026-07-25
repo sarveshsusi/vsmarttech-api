@@ -55,3 +55,22 @@ type CustomerSolution struct {
 func (CustomerSolution) TableName() string {
 	return "customer_solutions"
 }
+
+// AMCCustomerNameHistory records display-name changes made from AMC contract edit.
+type AMCCustomerNameHistory struct {
+	ID                 uuid.UUID `json:"id" gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	CustomerSolutionID uuid.UUID `json:"customer_solution_id" gorm:"type:uuid;index;not null"`
+	CustomerID         uuid.UUID `json:"customer_id" gorm:"type:uuid;index;not null"`
+	PONumber           string    `json:"po_number" gorm:"type:varchar(100);index;not null"`
+	OldName            string    `json:"old_name" gorm:"type:varchar(150);not null"`
+	NewName            string    `json:"new_name" gorm:"type:varchar(150);not null"`
+	ChangedBy          uuid.UUID `json:"changed_by" gorm:"type:uuid;index;not null"`
+	ChangedAt          time.Time `json:"changed_at" gorm:"index"`
+	Note               string    `json:"note,omitempty" gorm:"type:varchar(255)"`
+
+	ChangedByUser *User `json:"changed_by_user,omitempty" gorm:"foreignKey:ChangedBy"`
+}
+
+func (AMCCustomerNameHistory) TableName() string {
+	return "amc_customer_name_histories"
+}

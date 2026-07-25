@@ -387,6 +387,46 @@ type ContractWithCustomer struct {
 	Status        string `json:"status"` // active, expiring_soon, expired
 }
 
+type AMCNameHistoryRow struct {
+	ID                 uuid.UUID `json:"id"`
+	CustomerSolutionID uuid.UUID `json:"customer_solution_id"`
+	CustomerID         uuid.UUID `json:"customer_id"`
+	PONumber           string    `json:"po_number"`
+	OldName            string    `json:"old_name"`
+	NewName            string    `json:"new_name"`
+	ChangedBy          uuid.UUID `json:"changed_by"`
+	ChangedByName      string    `json:"changed_by_name"`
+	ChangedAt          time.Time `json:"changed_at"`
+	Note               string    `json:"note,omitempty"`
+}
+
+func (s *ContractExpiryService) ListAMCCustomerNameHistory(limit int) ([]AMCNameHistoryRow, error) {
+	rows, err := s.customerSolRepo.ListNameHistory(limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]AMCNameHistoryRow, 0, len(rows))
+	for _, r := range rows {
+		actor := ""
+		if r.ChangedByUser != nil {
+			actor = r.ChangedByUser.Name
+		}
+		out = append(out, AMCNameHistoryRow{
+			ID:                 r.ID,
+			CustomerSolutionID: r.CustomerSolutionID,
+			CustomerID:         r.CustomerID,
+			PONumber:           r.PONumber,
+			OldName:            r.OldName,
+			NewName:            r.NewName,
+			ChangedBy:          r.ChangedBy,
+			ChangedByName:      actor,
+			ChangedAt:          r.ChangedAt,
+			Note:               r.Note,
+		})
+	}
+	return out, nil
+}
+
 func (s *ContractExpiryService) GetAllAMCContractsWithDetails() ([]ContractWithCustomer, error) {
 	contracts, err := s.customerSolRepo.GetAllAMCContracts()
 	if err != nil {

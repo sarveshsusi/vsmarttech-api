@@ -15,6 +15,7 @@ type Handlers struct {
 // RegisterAdmin mounts AMC scheduler and contract admin routes.
 func RegisterAdmin(admin *gin.RouterGroup, h Handlers) {
 	admin.GET("/contracts/amc", h.Contract.GetAMCContracts)
+	admin.GET("/contracts/amc/name-history", h.Contract.GetAMCCustomerNameHistory)
 	admin.GET("/contracts/warranty", h.Contract.GetWarrantyContracts)
 	admin.POST("/contracts/check-expiry", h.Contract.TriggerExpiryCheck)
 

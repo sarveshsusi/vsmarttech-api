@@ -38,6 +38,16 @@ func (h *ContractHandler) GetAMCContracts(c *gin.Context) {
 	c.JSON(http.StatusOK, contracts)
 }
 
+// GetAMCCustomerNameHistory returns rename history for AMC contract customer display names.
+func (h *ContractHandler) GetAMCCustomerNameHistory(c *gin.Context) {
+	rows, err := h.contractService.ListAMCCustomerNameHistory(200)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch name change history"})
+		return
+	}
+	c.JSON(http.StatusOK, rows)
+}
+
 /* =========================
    GET ALL WARRANTY CONTRACTS
 ========================= */

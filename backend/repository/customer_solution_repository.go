@@ -208,3 +208,20 @@ func (r *CustomerSolutionRepository) GetAll() ([]models.CustomerSolution, error)
 
 	return solutions, err
 }
+
+func (r *CustomerSolutionRepository) CreateNameHistory(h *models.AMCCustomerNameHistory) error {
+	return r.db.Create(h).Error
+}
+
+func (r *CustomerSolutionRepository) ListNameHistory(limit int) ([]models.AMCCustomerNameHistory, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	var rows []models.AMCCustomerNameHistory
+	err := r.db.
+		Preload("ChangedByUser").
+		Order("changed_at DESC").
+		Limit(limit).
+		Find(&rows).Error
+	return rows, err
+}

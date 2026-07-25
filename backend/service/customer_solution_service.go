@@ -2,7 +2,9 @@ package service
 
 import (
 	"errors"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -11,6 +13,8 @@ import (
 	"rbac/repository"
 	"rbac/utils"
 )
+
+const maxCustomerDisplayNameLen = 150
 
 type CustomerSolutionService struct {
 	db           *gorm.DB
@@ -159,6 +163,35 @@ type UpdateCustomerSolutionRequest struct {
 	ChargeableType *models.ChargeableType
 
 	IsActive *bool
+
+	// CustomerName updates the linked login user's display name (same customer).
+	CustomerName *string
+	ChangedBy    uuid.UUID
+}
+
+func sanitizeCustomerDisplayName(raw string) (string, error) {
+	s := strings.TrimSpace(raw)
+	// Strip simple HTML tags to reduce stored XSS risk.
+	for {
+		start := strings.Index(s, "<")
+		if start < 0 {
+			break
+		}
+		end := strings.Index(s[start:], ">")
+		if end < 0 {
+			s = s[:start]
+			break
+		}
+		s = s[:start] + s[start+end+1:]
+	}
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", errors.New("customer name is required")
+	}
+	if utf8.RuneCountInString(s) > maxCustomerDisplayNameLen {
+		return "", errors.New("customer name is too long")
+	}
+	return s, nil
 }
 
 func (s *CustomerSolutionService) UpdateCustomerSolution(
@@ -250,11 +283,73 @@ func (s *CustomerSolutionService) UpdateCustomerSolution(
 		}
 	}
 
-	if len(updates) == 0 {
+	var newName string
+	var rename bool
+	if req.CustomerName != nil {
+		newName, err = sanitizeCustomerDisplayName(*req.CustomerName)
+		if err != nil {
+			return err
+		}
+		rename = true
+	}
+
+	if len(updates) == 0 && !rename {
 		return nil
 	}
 
-	return s.repo.Update(id, updates)
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		if len(updates) > 0 {
+			if err := tx.Model(&models.CustomerSolution{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+				return err
+			}
+		}
+		if !rename {
+			return nil
+		}
+
+		var customer models.Customer
+		if err := tx.Where("id = ?", cs.CustomerID).First(&customer).Error; err != nil {
+			return errors.New("customer not found")
+		}
+
+		var user models.User
+		if err := tx.Where("id = ?", customer.UserID).First(&user).Error; err != nil {
+			return errors.New("customer user not found")
+		}
+
+		oldName := strings.TrimSpace(user.Name)
+		if oldName == newName {
+			return nil
+		}
+
+		if err := tx.Model(&models.User{}).Where("id = ?", user.ID).Update("name", newName).Error; err != nil {
+			return err
+		}
+
+		// Keep contact_person aligned when it matched the previous display name, or was empty.
+		if strings.TrimSpace(customer.ContactPerson) == "" ||
+			strings.EqualFold(strings.TrimSpace(customer.ContactPerson), oldName) {
+			_ = tx.Model(&models.Customer{}).
+				Where("id = ?", customer.ID).
+				Update("contact_person", newName).Error
+		}
+
+		changedBy := req.ChangedBy
+		if changedBy == uuid.Nil {
+			return errors.New("missing actor for name change")
+		}
+
+		history := &models.AMCCustomerNameHistory{
+			CustomerSolutionID: cs.ID,
+			CustomerID:         cs.CustomerID,
+			PONumber:           cs.PONumber,
+			OldName:            oldName,
+			NewName:            newName,
+			ChangedBy:          changedBy,
+			ChangedAt:          time.Now().UTC(),
+		}
+		return tx.Create(history).Error
+	})
 }
 
 /* =========================

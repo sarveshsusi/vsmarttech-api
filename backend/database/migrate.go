@@ -127,6 +127,7 @@ func autoMigrate(db *gorm.DB) {
 		========================= */
 		&models.Solution{},
 		&models.CustomerSolution{}, // PO + AMC/Warranty lives here
+		&models.AMCCustomerNameHistory{},
 		&models.Asset{},
 		&models.AssetStatusHistory{},
 
