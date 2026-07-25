@@ -680,6 +680,26 @@ func (h *TicketHandler) ListTicketEvents(c *gin.Context) {
 	c.JSON(http.StatusOK, events)
 }
 
+// ListCustomerTicketEvents returns lifecycle events for the authenticated customer's ticket.
+func (h *TicketHandler) ListCustomerTicketEvents(c *gin.Context) {
+	ticketID := c.Query("ticket_id")
+	if ticketID == "" {
+		ticketID = c.Query("id")
+	}
+	if ticketID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ticket_id is required"})
+		return
+	}
+
+	userID := c.MustGet("user_id").(uuid.UUID)
+	events, err := h.service.ListCustomerTicketEvents(ticketID, userID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Ticket not found"})
+		return
+	}
+	c.JSON(http.StatusOK, events)
+}
+
 func (h *TicketHandler) ListRecentTicketEvents(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "25"))

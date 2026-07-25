@@ -1424,6 +1424,25 @@ func (s *TicketService) ListTicketEvents(ticketID string) ([]models.TicketEvent,
 	return s.ticketRepo.ListEventsByTicketID(ticketID)
 }
 
+// ListCustomerTicketEvents returns lifecycle events for a ticket owned by the customer user.
+func (s *TicketService) ListCustomerTicketEvents(ticketID string, userID uuid.UUID) ([]models.TicketEvent, error) {
+	if ticketID == "" {
+		return nil, errors.New("ticket_id is required")
+	}
+	customer, err := s.customerRepo.GetByUserID(userID)
+	if err != nil {
+		return nil, errors.New("ticket not found or access denied")
+	}
+	ticket, err := s.ticketRepo.GetByID(ticketID)
+	if err != nil {
+		return nil, errors.New("ticket not found or access denied")
+	}
+	if ticket.CustomerID != customer.ID {
+		return nil, errors.New("ticket not found or access denied")
+	}
+	return s.ticketRepo.ListEventsByTicketID(ticketID)
+}
+
 func (s *TicketService) ListRecentTicketEvents(filter repository.RecentEventsFilter) ([]models.TicketEvent, int64, error) {
 	return s.ticketRepo.ListRecentEvents(filter)
 }

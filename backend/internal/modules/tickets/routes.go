@@ -48,6 +48,7 @@ func RegisterSupport(support *gin.RouterGroup, h Handlers) {
 // RegisterCustomer mounts customer ticket + feedback routes.
 func RegisterCustomer(customer *gin.RouterGroup, h Handlers) {
 	customer.GET("/ticket", h.Ticket.GetTicketById)
+	customer.GET("/tickets/events", h.Ticket.ListCustomerTicketEvents)
 	customer.POST("/tickets", h.Ticket.CreateTicket)
 	customer.POST("/tickets/feedback", h.Feedback.Submit)
 }
