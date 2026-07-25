@@ -52,11 +52,15 @@ func New(opts Options) (*App, error) {
 
 	db := database.DB
 	mailer := utils.NewMailer(cfg.Mail)
+	webPusher := utils.NewWebPusher(cfg.VAPID)
 
 	authRepo := repository.NewAuthRepository(db)
 	customerRepo := repository.NewCustomerRepository(db)
 	customerSolutionRepo := repository.NewCustomerSolutionRepository(db)
 	notificationRepo := repository.NewNotificationRepository(db)
+	pushRepo := repository.NewPushSubscriptionRepository(db)
+	ticketRepo := repository.NewTicketRepository(db)
+	userRepo := repository.NewUserRepository(db)
 
 	dashboardURL := cfg.FrontendURL
 	if dashboardURL == "" {
@@ -67,6 +71,10 @@ func New(opts Options) (*App, error) {
 		}
 	}
 
+	notificationService := service.NewNotificationService(
+		db, notificationRepo, pushRepo, ticketRepo, userRepo, customerRepo, mailer, webPusher, cfg.FrontendURL,
+	)
+
 	contractExpiryService := service.NewContractExpiryService(
 		db,
 		customerSolutionRepo,
@@ -76,6 +84,7 @@ func New(opts Options) (*App, error) {
 		mailer,
 		dashboardURL,
 	)
+	contractExpiryService.SetNotificationService(notificationService)
 
 	app := &App{
 		Config:                cfg,
@@ -86,7 +95,7 @@ func New(opts Options) (*App, error) {
 	}
 
 	if opts.EnableHTTP {
-		if err := wireHTTP(app, db, mailer, cfg, authRepo, customerRepo, customerSolutionRepo, notificationRepo); err != nil {
+		if err := wireHTTP(app, db, mailer, cfg, authRepo, customerRepo, customerSolutionRepo, ticketRepo, userRepo, notificationService); err != nil {
 			return nil, err
 		}
 	}
@@ -106,16 +115,16 @@ func wireHTTP(
 	authRepo *repository.AuthRepository,
 	customerRepo *repository.CustomerRepository,
 	customerSolutionRepo *repository.CustomerSolutionRepository,
-	notificationRepo *repository.NotificationRepository,
+	ticketRepo *repository.TicketRepository,
+	userRepo *repository.UserRepository,
+	notificationService *service.NotificationService,
 ) error {
 	rememberedDeviceRepo := repository.NewRememberedDeviceRepo(db)
 	companyRepo := repository.NewCompanyRepository(db)
 	supportEngineerRepo := repository.NewSupportEngineerRepository(db)
 	solutionRepo := repository.NewSolutionRepository(db)
-	ticketRepo := repository.NewTicketRepository(db)
 	feedbackRepo := repository.NewFeedbackRepository(db)
 	dashboardRepo := repository.NewDashboardRepository(db)
-	userRepo := repository.NewUserRepository(db)
 	amcRepo := repository.NewAMCAssignmentRepository(db)
 
 	authService := service.NewAuthService(db, authRepo, rememberedDeviceRepo, customerRepo, cfg)
@@ -123,7 +132,6 @@ func wireHTTP(
 	customerService := service.NewCustomerService(db, authRepo, customerRepo, ticketRepo)
 	solutionService := service.NewSolutionService(solutionRepo)
 	customerSolutionService := service.NewCustomerSolutionService(db, customerSolutionRepo, customerRepo)
-	notificationService := service.NewNotificationService(db, notificationRepo, ticketRepo, userRepo, customerRepo, mailer, cfg.FrontendURL)
 	ticketService := service.NewTicketService(db, ticketRepo, customerRepo, customerSolutionRepo, notificationService)
 	supportService := service.NewSupportService(ticketRepo, supportEngineerRepo, db)
 	adminService := service.NewAdminService(dashboardRepo)

@@ -15,6 +15,7 @@ type Config struct {
 	JWT         JWTConfig
 	FrontendURL string
 	Mail        MailConfig
+	VAPID       VAPIDConfig
 	ImageKit    ImageKitConfig // ✅ KEPT for backward compatibility
 	Storage     StorageConfig
 	AWS         AWSConfig
@@ -56,6 +57,16 @@ type MailConfig struct {
 	Username string
 	Password string
 	From     string
+}
+
+/* =====================
+   Web Push (VAPID)
+===================== */
+
+type VAPIDConfig struct {
+	PublicKey  string
+	PrivateKey string
+	Subject    string // mailto: or https: contact URI
 }
 
 /* =====================
@@ -200,6 +211,12 @@ func LoadConfig() *Config {
 			Username: getEnv("MAIL_USERNAME", ""),
 			Password: getEnv("MAIL_PASSWORD", ""),
 			From:     getEnv("MAIL_FROM", "rbac@app.com"),
+		},
+
+		VAPID: VAPIDConfig{
+			PublicKey:  getEnv("VAPID_PUBLIC_KEY", ""),
+			PrivateKey: getEnv("VAPID_PRIVATE_KEY", ""),
+			Subject:    getEnv("VAPID_SUBJECT", "mailto:admin@localhost"),
 		},
 
 		ImageKit: ImageKitConfig{

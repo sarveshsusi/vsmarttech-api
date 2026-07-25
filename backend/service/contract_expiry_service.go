@@ -20,6 +20,7 @@ type ContractExpiryService struct {
 	customerRepo     *repository.CustomerRepository
 	authRepo         *repository.AuthRepository
 	notifRepo        *repository.NotificationRepository
+	notifService     *NotificationService
 	mailer           *utils.Mailer
 	dashboardBaseURL string
 }
@@ -42,6 +43,11 @@ func NewContractExpiryService(
 		mailer:           mailer,
 		dashboardBaseURL: dashboardBaseURL,
 	}
+}
+
+// SetNotificationService wires push delivery after in-app notification creates.
+func (s *ContractExpiryService) SetNotificationService(notifService *NotificationService) {
+	s.notifService = notifService
 }
 
 /* =========================
@@ -237,6 +243,9 @@ func (s *ContractExpiryService) sendAMCExpiryNotification(contract models.Custom
 		log.Printf("[CONTRACT_EXPIRY_ERROR] Failed to create notification: %v", err)
 	} else {
 		log.Printf("[CONTRACT_EXPIRY] Created AMC expiry notification for contract %s, %d days remaining", contract.PONumber, actualDaysRemaining)
+		if s.notifService != nil {
+			s.notifService.MaybeSendPush(notification)
+		}
 	}
 
 	// Send email notification
@@ -323,6 +332,9 @@ func (s *ContractExpiryService) sendWarrantyExpiryNotification(contract models.C
 		log.Printf("[CONTRACT_EXPIRY_ERROR] Failed to create notification: %v", err)
 	} else {
 		log.Printf("[CONTRACT_EXPIRY] Created warranty expiry notification for contract %s, %d days remaining", contract.PONumber, actualDaysRemaining)
+		if s.notifService != nil {
+			s.notifService.MaybeSendPush(notification)
+		}
 	}
 
 	// Send email notification
@@ -523,6 +535,9 @@ func (s *ContractExpiryService) sendAdminDailySummaryLegacy(amcNotificationsSent
 			log.Printf("[CONTRACT_EXPIRY_ERROR] Failed to create admin notification for %s: %v", admin.Email, err)
 		} else {
 			log.Printf("[CONTRACT_EXPIRY] Sent daily summary notification to admin: %s", admin.Email)
+			if s.notifService != nil {
+				s.notifService.MaybeSendPush(notification)
+			}
 		}
 
 		// Also send email to admin

@@ -142,6 +142,7 @@ type UpdatePreferencesRequest struct {
 	EmailNotifications             *bool `json:"email_notifications,omitempty"`
 	InAppNotifications             *bool `json:"in_app_notifications,omitempty"`
 	WebhookNotifications           *bool `json:"webhook_notifications,omitempty"`
+	PushNotifications              *bool `json:"push_notifications,omitempty"`
 	TicketCreatedNotification      *bool `json:"ticket_created_notification,omitempty"`
 	TicketAssignedNotification     *bool `json:"ticket_assigned_notification,omitempty"`
 	TicketStatusChangeNotification *bool `json:"ticket_status_change_notification,omitempty"`
@@ -166,6 +167,9 @@ func (h *NotificationHandler) UpdatePreferences(c *gin.Context) {
 	}
 	if req.WebhookNotifications != nil {
 		updates["webhook_notifications"] = *req.WebhookNotifications
+	}
+	if req.PushNotifications != nil {
+		updates["push_notifications"] = *req.PushNotifications
 	}
 	if req.TicketCreatedNotification != nil {
 		updates["ticket_created_notification"] = *req.TicketCreatedNotification
@@ -192,6 +196,78 @@ func (h *NotificationHandler) UpdatePreferences(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Preferences updated successfully"})
+}
+
+/* =========================
+   WEB PUSH
+========================= */
+
+func (h *NotificationHandler) GetVAPIDPublicKey(c *gin.Context) {
+	key := h.notifService.VAPIDPublicKey()
+	if key == "" {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Web Push is not configured"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"public_key": key})
+}
+
+type PushSubscriptionRequest struct {
+	Endpoint string `json:"endpoint" binding:"required"`
+	Keys     struct {
+		P256dh string `json:"p256dh" binding:"required"`
+		Auth   string `json:"auth" binding:"required"`
+	} `json:"keys" binding:"required"`
+}
+
+func (h *NotificationHandler) SubscribePush(c *gin.Context) {
+	userID := c.MustGet("user_id").(uuid.UUID)
+
+	if !h.notifService.PushEnabled() {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Web Push is not configured"})
+		return
+	}
+
+	var req PushSubscriptionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid subscription payload"})
+		return
+	}
+
+	ua := c.GetHeader("User-Agent")
+	if err := h.notifService.UpsertPushSubscription(userID, req.Endpoint, req.Keys.P256dh, req.Keys.Auth, ua); err != nil {
+		log.Printf("[PUSH_SUBSCRIBE_ERROR] user=%s: %v", userID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save subscription"})
+		return
+	}
+
+	// Opt the user into push once they successfully subscribe
+	_ = h.notifService.UpdatePreference(userID, map[string]interface{}{
+		"push_notifications": true,
+	})
+
+	c.JSON(http.StatusOK, gin.H{"message": "Subscribed"})
+}
+
+type UnsubscribePushRequest struct {
+	Endpoint string `json:"endpoint" binding:"required"`
+}
+
+func (h *NotificationHandler) UnsubscribePush(c *gin.Context) {
+	userID := c.MustGet("user_id").(uuid.UUID)
+
+	var req UnsubscribePushRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "endpoint is required"})
+		return
+	}
+
+	if err := h.notifService.DeletePushSubscription(userID, req.Endpoint); err != nil {
+		log.Printf("[PUSH_UNSUBSCRIBE_ERROR] user=%s: %v", userID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to remove subscription"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Unsubscribed"})
 }
 
 /* =========================

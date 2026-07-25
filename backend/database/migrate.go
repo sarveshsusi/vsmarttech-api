@@ -170,6 +170,7 @@ func autoMigrate(db *gorm.DB) {
 		&models.Notification{},
 		&models.WebhookEvent{},
 		&models.NotificationPreference{},
+		&models.PushSubscription{},
 	)
 
 	if err != nil {

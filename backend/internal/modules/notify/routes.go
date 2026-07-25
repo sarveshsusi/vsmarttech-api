@@ -18,4 +18,11 @@ func Register(protected *gin.RouterGroup, h *handler.NotificationHandler) {
 		notifications.PUT("/preferences", h.UpdatePreferences)
 		notifications.POST("/test", h.TestCreateNotification)
 	}
+
+	push := protected.Group("/push")
+	{
+		push.GET("/vapid-public-key", h.GetVAPIDPublicKey)
+		push.POST("/subscriptions", h.SubscribePush)
+		push.DELETE("/subscriptions", h.UnsubscribePush)
+	}
 }

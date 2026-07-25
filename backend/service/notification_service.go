@@ -19,29 +19,35 @@ import (
 type NotificationService struct {
 	db           *gorm.DB
 	notifRepo    *repository.NotificationRepository
+	pushRepo     *repository.PushSubscriptionRepository
 	ticketRepo   *repository.TicketRepository
 	userRepo     *repository.UserRepository
 	customerRepo *repository.CustomerRepository
 	mailer       *utils.Mailer
+	webPusher    *utils.WebPusher
 	frontendURL  string
 }
 
 func NewNotificationService(
 	db *gorm.DB,
 	notifRepo *repository.NotificationRepository,
+	pushRepo *repository.PushSubscriptionRepository,
 	ticketRepo *repository.TicketRepository,
 	userRepo *repository.UserRepository,
 	customerRepo *repository.CustomerRepository,
 	mailer *utils.Mailer,
+	webPusher *utils.WebPusher,
 	frontendURL string,
 ) *NotificationService {
 	return &NotificationService{
 		db:           db,
 		notifRepo:    notifRepo,
+		pushRepo:     pushRepo,
 		ticketRepo:   ticketRepo,
 		userRepo:     userRepo,
 		customerRepo: customerRepo,
 		mailer:       mailer,
+		webPusher:    webPusher,
 		frontendURL:  strings.TrimRight(frontendURL, "/"),
 	}
 }
@@ -167,7 +173,121 @@ func (s *NotificationService) CreateTicketNotification(
 		notificationType,
 	)
 
+	s.maybeSendPush(notification)
+
 	return nil
+}
+
+/* =========================
+   WEB PUSH
+========================= */
+
+func (s *NotificationService) VAPIDPublicKey() string {
+	if s.webPusher == nil {
+		return ""
+	}
+	return s.webPusher.PublicKey()
+}
+
+func (s *NotificationService) PushEnabled() bool {
+	return s.webPusher != nil && s.webPusher.Enabled()
+}
+
+func (s *NotificationService) UpsertPushSubscription(userID uuid.UUID, endpoint, p256dh, auth, userAgent string) error {
+	if s.pushRepo == nil {
+		return fmt.Errorf("push subscriptions not configured")
+	}
+	sub := &models.PushSubscription{
+		UserID:    userID,
+		Endpoint:  endpoint,
+		P256dh:    p256dh,
+		Auth:      auth,
+		UserAgent: userAgent,
+	}
+	return s.pushRepo.Upsert(sub)
+}
+
+func (s *NotificationService) DeletePushSubscription(userID uuid.UUID, endpoint string) error {
+	if s.pushRepo == nil {
+		return fmt.Errorf("push subscriptions not configured")
+	}
+	return s.pushRepo.DeleteByEndpoint(userID, endpoint)
+}
+
+// MaybeSendPush sends a Web Push if the user opted in. Safe to call after any in-app create.
+func (s *NotificationService) MaybeSendPush(n *models.Notification) {
+	s.maybeSendPush(n)
+}
+
+func (s *NotificationService) maybeSendPush(n *models.Notification) {
+	if n == nil || s.webPusher == nil || !s.webPusher.Enabled() || s.pushRepo == nil {
+		return
+	}
+
+	prefs, err := s.notifRepo.GetPreference(n.UserID)
+	if err != nil {
+		log.Printf("[WEBPUSH] failed to load prefs for user %s: %v", n.UserID, err)
+		return
+	}
+	if prefs == nil || !prefs.PushNotifications {
+		return
+	}
+
+	subs, err := s.pushRepo.ListByUserID(n.UserID)
+	if err != nil {
+		log.Printf("[WEBPUSH] failed to list subscriptions for user %s: %v", n.UserID, err)
+		return
+	}
+	if len(subs) == 0 {
+		return
+	}
+
+	payload := utils.PushPayload{
+		Title:          n.Title,
+		Body:           n.Message,
+		URL:            s.pushDeepLink(n),
+		NotificationID: n.ID.String(),
+	}
+
+	for i := range subs {
+		sub := &subs[i]
+		status, err := s.webPusher.Send(sub, payload)
+		if err != nil {
+			log.Printf("[WEBPUSH] send error user=%s: %v", n.UserID, err)
+			continue
+		}
+		if status == 404 || status == 410 {
+			if delErr := s.pushRepo.DeleteByID(sub.ID); delErr != nil {
+				log.Printf("[WEBPUSH] failed to prune dead sub %s: %v", sub.ID, delErr)
+			}
+		}
+	}
+}
+
+func (s *NotificationService) pushDeepLink(n *models.Notification) string {
+	if n == nil {
+		return "/dashboard"
+	}
+	switch n.Type {
+	case models.NotificationType("amc_assigned"),
+		models.NotificationType("visit_approaching"),
+		models.NotificationType("visit_overdue"),
+		models.NotificationType("visit_completed"):
+		return "/support/amc-dashboard"
+	case models.NotificationTypeAMCExpiry3Months,
+		models.NotificationTypeAMCExpiry1Month,
+		models.NotificationTypeAMCExpiry7Days,
+		models.NotificationTypeWarrantyExpiry3Months,
+		models.NotificationTypeWarrantyExpiry1Month,
+		models.NotificationTypeWarrantyExpiry7Days:
+		return "/customer/solutions"
+	case models.NotificationTypeAdminExpiryAlert:
+		return "/admin/contracts/amc"
+	}
+	if n.TicketID != nil && *n.TicketID != "" {
+		return "/admin/tickets/details?id=" + url.QueryEscape(*n.TicketID)
+	}
+	return "/dashboard"
 }
 
 /* =========================
@@ -842,6 +962,7 @@ func (s *NotificationService) NotifyAMCAssigned(engineerID uuid.UUID, assignment
 		}
 
 		s.notifRepo.Create(notification)
+		s.MaybeSendPush(notification)
 	}()
 }
 
@@ -871,6 +992,7 @@ func (s *NotificationService) NotifyVisitApproaching(engineerID uuid.UUID, visit
 		}
 
 		s.notifRepo.Create(notification)
+		s.MaybeSendPush(notification)
 	}()
 }
 
@@ -928,5 +1050,6 @@ func (s *NotificationService) NotifyVisitOverdue(engineerID uuid.UUID, visitID u
 		}
 
 		s.notifRepo.Create(notification)
+		s.MaybeSendPush(notification)
 	}()
 }

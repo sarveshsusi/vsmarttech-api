@@ -112,6 +112,7 @@ type NotificationPreference struct {
 	EmailNotifications   bool `gorm:"default:true" json:"email_notifications"`
 	InAppNotifications   bool `gorm:"default:true" json:"in_app_notifications"`
 	WebhookNotifications bool `gorm:"default:true" json:"webhook_notifications"`
+	PushNotifications    bool `gorm:"default:false" json:"push_notifications"`
 
 	// Notification types to receive
 	TicketCreatedNotification      bool `gorm:"default:true" json:"ticket_created_notification"`
@@ -125,4 +126,24 @@ type NotificationPreference struct {
 
 func (NotificationPreference) TableName() string {
 	return "notification_preferences"
+}
+
+/* =========================
+   PUSH SUBSCRIPTION (Web Push)
+========================= */
+
+type PushSubscription struct {
+	ID        uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
+	UserID    uuid.UUID `gorm:"type:uuid;index;not null" json:"user_id"`
+	User      *User     `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	Endpoint  string    `gorm:"type:text;uniqueIndex;not null" json:"endpoint"`
+	P256dh    string    `gorm:"type:text;not null" json:"p256dh"`
+	Auth      string    `gorm:"type:text;not null" json:"auth"`
+	UserAgent string    `gorm:"type:text" json:"user_agent,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func (PushSubscription) TableName() string {
+	return "push_subscriptions"
 }

@@ -145,6 +145,7 @@ func (r *NotificationRepository) GetPreference(userID uuid.UUID) (*models.Notifi
 				EmailNotifications:             true,
 				InAppNotifications:             true,
 				WebhookNotifications:           true,
+				PushNotifications:              false,
 				TicketCreatedNotification:      true,
 				TicketAssignedNotification:     true,
 				TicketStatusChangeNotification: true,
