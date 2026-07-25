@@ -42,6 +42,7 @@ func stripHTML(html string) string {
 	replacements := []string{
 		"<br>", "\n", "<br/>", "\n", "<br />", "\n",
 		"</p>", "\n\n", "</div>", "\n", "</h1>", "\n", "</li>", "\n",
+		"</td>", " ", "</tr>", "\n", "</th>", " ", "</table>", "\n\n",
 	}
 	for i := 0; i+1 < len(replacements); i += 2 {
 		plain = strings.ReplaceAll(plain, replacements[i], replacements[i+1])

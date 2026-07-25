@@ -20,10 +20,10 @@ type SLAEscalationCron struct {
 }
 
 // NewSLAEscalationCron creates a new SLA escalation cron job
-func NewSLAEscalationCron(db *gorm.DB, mailer *utils.Mailer) *SLAEscalationCron {
+func NewSLAEscalationCron(db *gorm.DB, mailer *utils.Mailer, frontendURL string) *SLAEscalationCron {
 	return &SLAEscalationCron{
 		db:               db,
-		slaEscalationSvc: service.NewSLAEscalationService(db, mailer),
+		slaEscalationSvc: service.NewSLAEscalationService(db, mailer, frontendURL),
 		done:             make(chan bool),
 	}
 }

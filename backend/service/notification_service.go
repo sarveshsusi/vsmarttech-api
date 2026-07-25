@@ -53,19 +53,11 @@ func NewNotificationService(
 }
 
 func (s *NotificationService) customerTicketURL(ticketID string) string {
-	base := s.frontendURL
-	if base == "" {
-		base = "http://localhost:5173"
-	}
-	return base + "/customer/tickets"
+	return utils.CustomerTicketDetailURL(s.frontendURL, ticketID)
 }
 
 func (s *NotificationService) adminTicketURL(ticketID string) string {
-	base := s.frontendURL
-	if base == "" {
-		base = "http://localhost:5173"
-	}
-	return base + "/admin/tickets/details?id=" + url.QueryEscape(ticketID)
+	return utils.AdminTicketDetailURL(s.frontendURL, ticketID)
 }
 
 func (s *NotificationService) resolveEngineerDisplayName(ticket *models.Ticket) string {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"strings"
 	"time"
 
 	"rbac/models"
@@ -41,7 +42,7 @@ func NewContractExpiryService(
 		authRepo:         authRepo,
 		notifRepo:        notifRepo,
 		mailer:           mailer,
-		dashboardBaseURL: dashboardBaseURL,
+		dashboardBaseURL: strings.TrimRight(strings.TrimSpace(dashboardBaseURL), "/"),
 	}
 }
 
@@ -255,7 +256,7 @@ func (s *ContractExpiryService) sendAMCExpiryNotification(contract models.Custom
 			customerName = customer.User.Email
 		}
 
-		dashboardURL := s.dashboardBaseURL
+		dashboardURL := utils.JoinFrontendURL(s.dashboardBaseURL, "/customer/solutions")
 		emailBody := utils.AMCExpiryEmailTemplate(
 			customerName,
 			solutionName,
@@ -344,7 +345,7 @@ func (s *ContractExpiryService) sendWarrantyExpiryNotification(contract models.C
 			customerName = customer.User.Email
 		}
 
-		dashboardURL := s.dashboardBaseURL
+		dashboardURL := utils.JoinFrontendURL(s.dashboardBaseURL, "/customer/solutions")
 		emailBody := utils.WarrantyExpiryEmailTemplate(
 			customerName,
 			solutionName,
@@ -611,7 +612,7 @@ func (s *ContractExpiryService) getAdminSummaryEmailTemplate(
 	amcExpiring30Days int,
 	warrantyExpiring30Days int,
 ) string {
-	dashboardURL := s.dashboardBaseURL + "/admin/contracts/amc"
+	dashboardURL := utils.JoinFrontendURL(s.dashboardBaseURL, "/admin/contracts/amc")
 
 	return fmt.Sprintf(`
 <!DOCTYPE html>

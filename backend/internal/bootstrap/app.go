@@ -63,13 +63,6 @@ func New(opts Options) (*App, error) {
 	userRepo := repository.NewUserRepository(db)
 
 	dashboardURL := cfg.FrontendURL
-	if dashboardURL == "" {
-		if cfg.Server.Env == "production" {
-			dashboardURL = "https://yourdomain.com"
-		} else {
-			dashboardURL = "http://localhost:5173"
-		}
-	}
 
 	notificationService := service.NewNotificationService(
 		db, notificationRepo, pushRepo, ticketRepo, userRepo, customerRepo, mailer, webPusher, cfg.FrontendURL,
@@ -91,7 +84,7 @@ func New(opts Options) (*App, error) {
 		DB:                    db,
 		ContractExpiryService: contractExpiryService,
 		Mailer:                mailer,
-		SLAEscalationCron:     jobs.NewSLAEscalationCron(db, mailer),
+		SLAEscalationCron:     jobs.NewSLAEscalationCron(db, mailer, cfg.FrontendURL),
 	}
 
 	if opts.EnableHTTP {

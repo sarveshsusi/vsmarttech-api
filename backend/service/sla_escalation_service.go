@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"rbac/models"
@@ -15,17 +16,19 @@ import (
 
 // SLAEscalationService handles SLA escalation logic
 type SLAEscalationService struct {
-	db            *gorm.DB
-	mailer        *utils.Mailer
+	db             *gorm.DB
+	mailer         *utils.Mailer
 	escalationRepo *repository.TicketEscalationRepository
+	frontendURL    string
 }
 
 // NewSLAEscalationService creates a new SLA escalation service
-func NewSLAEscalationService(db *gorm.DB, mailer *utils.Mailer) *SLAEscalationService {
+func NewSLAEscalationService(db *gorm.DB, mailer *utils.Mailer, frontendURL string) *SLAEscalationService {
 	return &SLAEscalationService{
-		db:            db,
-		mailer:        mailer,
+		db:             db,
+		mailer:         mailer,
 		escalationRepo: repository.NewTicketEscalationRepository(db),
+		frontendURL:    strings.TrimRight(strings.TrimSpace(frontendURL), "/"),
 	}
 }
 
@@ -158,11 +161,16 @@ func (s *SLAEscalationService) notifySLABreach(ctx context.Context, ticket *mode
 		log.Printf("[SLA_NOTIFICATION_WARN] Failed to get admin for ticket %s: %v", ticket.ID, err)
 	}
 
-	// Get dashboard URL from environment or use default
-	dashboardURL := "http://localhost:5173/support-reports" // Default, should be from config
-
 	// Use ticket ID directly (already in VS/MM/YY/number format)
 	ticketIDStr := ticket.ID
+	engineerDashboardURL := utils.CustomerTicketDetailURL(s.frontendURL, ticketIDStr)
+	adminDashboardURL := utils.AdminTicketDetailURL(s.frontendURL, ticketIDStr)
+	if engineerDashboardURL == "" {
+		engineerDashboardURL = utils.SupportReportsURL(s.frontendURL)
+	}
+	if adminDashboardURL == "" {
+		log.Printf("[SLA_NOTIFICATION_WARN] FRONTEND_URL is unset; SLA emails will omit deep links for ticket %s", ticket.ID)
+	}
 
 	// Get customer name
 	customerName := "N/A"
@@ -172,7 +180,7 @@ func (s *SLAEscalationService) notifySLABreach(ctx context.Context, ticket *mode
 
 	// Send email to support engineer
 	if engineerUser.Email != "" {
-		subject := fmt.Sprintf("🚨 SLA Breach Alert - Ticket %s", ticketIDStr)
+		subject := fmt.Sprintf("SLA Breach Alert - Ticket %s", ticketIDStr)
 		htmlContent := utils.SLABreachEmailTemplate(
 			engineerUser.Name,
 			ticketIDStr,
@@ -181,7 +189,7 @@ func (s *SLAEscalationService) notifySLABreach(ctx context.Context, ticket *mode
 			string(ticket.Priority),
 			slaStatus.HoursOverdue,
 			slaStatus.TotalSLAHours,
-			dashboardURL,
+			engineerDashboardURL,
 		)
 
 		if err := s.mailer.Send(engineerUser.Email, subject, htmlContent); err != nil {
@@ -194,7 +202,7 @@ func (s *SLAEscalationService) notifySLABreach(ctx context.Context, ticket *mode
 
 	// Send email to admin
 	if admin.Email != "" {
-		subject := fmt.Sprintf("🚨 SLA Breach Alert - Ticket %s (Admin Notification)", ticketIDStr)
+		subject := fmt.Sprintf("SLA Breach Alert - Ticket %s (Admin Notification)", ticketIDStr)
 		htmlContent := utils.SLABreachEmailTemplate(
 			admin.Name,
 			ticketIDStr,
@@ -203,7 +211,7 @@ func (s *SLAEscalationService) notifySLABreach(ctx context.Context, ticket *mode
 			string(ticket.Priority),
 			slaStatus.HoursOverdue,
 			slaStatus.TotalSLAHours,
-			dashboardURL,
+			adminDashboardURL,
 		)
 
 		if err := s.mailer.Send(admin.Email, subject, htmlContent); err != nil {

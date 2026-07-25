@@ -595,7 +595,7 @@ func (s *AuthService) CreateUser(
 	}
 
 	token, _ := s.CreatePasswordReset(createdUser)
-	resetURL := s.cfg.FrontendURL + "/reset-password?token=" + token
+	resetURL := utils.ResetPasswordURL(s.cfg.FrontendURL, token)
 
 	body := utils.SetPasswordEmailTemplate(createdUser.Name, resetURL)
 
@@ -687,7 +687,7 @@ func (s *AuthService) SendPasswordResetEmail(email string) error {
 		return err
 	}
 
-	resetURL := s.cfg.FrontendURL + "/reset-password?token=" + token
+	resetURL := utils.ResetPasswordURL(s.cfg.FrontendURL, token)
 
 	body := utils.PasswordResetEmailTemplate(resetURL)
 
