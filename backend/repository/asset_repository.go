@@ -132,6 +132,15 @@ func (r *AssetRepository) CreateStatusHistory(h *models.AssetStatusHistory) erro
 	return r.db.Create(h).Error
 }
 
+func (r *AssetRepository) FindBySerialNumber(serial string) (*models.Asset, error) {
+	var asset models.Asset
+	err := r.db.Where("serial_number = ?", serial).First(&asset).Error
+	if err != nil {
+		return nil, err
+	}
+	return &asset, nil
+}
+
 func (r *AssetRepository) ListStatusHistory(assetID uuid.UUID) ([]models.AssetStatusHistory, error) {
 	var rows []models.AssetStatusHistory
 	err := r.db.

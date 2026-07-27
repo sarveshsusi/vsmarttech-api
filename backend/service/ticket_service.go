@@ -405,6 +405,10 @@ func (s *TicketService) StartTicket(
 		return errors.New("you are not assigned to this ticket")
 	}
 
+	if ticket.Status == models.StatusHalted {
+		return errors.New("ticket is halted pending workshop return — cannot start work")
+	}
+
 	if err := assertTicketTransition(ticket.Status, models.StatusInProgress); err != nil {
 		log.Printf("[START_TICKET_ERROR] %v", err)
 		return err
@@ -501,6 +505,10 @@ func (s *TicketService) CloseTicket(
 	if ticket.EngineerID == nil || *ticket.EngineerID != engineer.ID {
 		log.Printf("[CLOSE_TICKET_ERROR] Engineer %s is not assigned to this ticket (ticket assigned to %v)", engineer.ID, ticket.EngineerID)
 		return errors.New("you are not assigned to this ticket")
+	}
+
+	if ticket.Status == models.StatusHalted {
+		return errors.New("ticket is halted pending workshop return — cannot close until the device is sent to site")
 	}
 
 	if err := assertTicketTransition(ticket.Status, models.StatusClosed); err != nil {
@@ -1161,6 +1169,9 @@ func (s *TicketService) CreateFieldVisit(
 	}
 	if ticket.EngineerID == nil || *ticket.EngineerID != engineer.ID {
 		return nil, errors.New("you are not assigned to this ticket")
+	}
+	if ticket.Status == models.StatusHalted {
+		return nil, errors.New("ticket is halted pending workshop return — cannot log field visits")
 	}
 	if ticket.Status != models.StatusInProgress {
 		return nil, errors.New("field visits can only be logged while ticket is In Progress")

@@ -39,8 +39,41 @@ func Migrate(db *gorm.DB, mode string) {
 		autoMigrate(db)
 		backfillRefreshTokenFamilyIDs(db)
 		backfillTicketFeedbackLifecycle(db)
+		ensureTicketHaltedStatusCheck(db)
 		syncEngineerIDs(db)
 		log.Println("Database migration completed (auto)")
+	}
+}
+
+// ensureTicketHaltedStatusCheck widens the tickets.status CHECK to include Halted.
+func ensureTicketHaltedStatusCheck(db *gorm.DB) {
+	if !db.Migrator().HasTable("tickets") {
+		return
+	}
+	_ = db.Exec(`
+		DO $$
+		DECLARE
+		  r RECORD;
+		BEGIN
+		  FOR r IN
+		    SELECT c.conname
+		    FROM pg_constraint c
+		    JOIN pg_class t ON c.conrelid = t.oid
+		    WHERE t.relname = 'tickets'
+		      AND c.contype = 'c'
+		      AND pg_get_constraintdef(c.oid) ILIKE '%status%'
+		  LOOP
+		    EXECUTE format('ALTER TABLE tickets DROP CONSTRAINT IF EXISTS %I', r.conname);
+		  END LOOP;
+		END $$;
+	`).Error
+	if err := db.Exec(`
+		ALTER TABLE tickets
+		  ADD CONSTRAINT tickets_status_check
+		  CHECK (status IN ('Open', 'Assigned', 'In Progress', 'Halted', 'Closed'))
+	`).Error; err != nil {
+		// Constraint may already exist with the desired definition.
+		log.Printf("warning: tickets status check (may already exist): %v", err)
 	}
 }
 
@@ -141,6 +174,7 @@ func autoMigrate(db *gorm.DB) {
 		&models.TicketComment{},
 		&models.TicketAttachment{},
 		&models.TicketFeedback{},
+		&models.TicketAssetDrop{},
 
 		/* =========================
 		   FIELD SERVICE & AUDIT

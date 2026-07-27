@@ -158,6 +158,7 @@ func (r *TicketRepository) GetByEngineerID(engineerID uuid.UUID) ([]models.Ticke
 		Preload("SupportEngineer").
 		Preload("SupportEngineer.User").
 		Preload("Customer").
+		Preload("Customer.Company").
 		Preload("CustomerSolution").
 		Preload("CustomerSolution.Solution").
 		Preload("Attachments").

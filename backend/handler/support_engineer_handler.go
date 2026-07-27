@@ -12,6 +12,7 @@ import (
 type SupportEngineerHandler struct {
 	engineerService *service.SupportEngineerService
 	supportService  *service.SupportService
+	assetDrop       *service.AssetDropService
 }
 
 /* =========================
@@ -21,10 +22,12 @@ type SupportEngineerHandler struct {
 func NewSupportEngineerHandler(
 	engineerService *service.SupportEngineerService,
 	supportService *service.SupportService,
+	assetDrop *service.AssetDropService,
 ) *SupportEngineerHandler {
 	return &SupportEngineerHandler{
 		engineerService: engineerService,
 		supportService:  supportService,
+		assetDrop:       assetDrop,
 	}
 }
 
@@ -69,6 +72,9 @@ func (h *SupportEngineerHandler) GetMyTickets(c *gin.Context) {
 			"error": "failed to load tickets",
 		})
 		return
+	}
+	if h.assetDrop != nil {
+		h.assetDrop.AttachLatestToTickets(tickets)
 	}
 
 	c.JSON(http.StatusOK, tickets)

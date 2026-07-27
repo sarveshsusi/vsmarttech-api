@@ -9,10 +9,16 @@ var ValidTransitions = map[models.TicketStatus][]models.TicketStatus{
 	},
 	models.StatusAssigned: {
 		models.StatusInProgress,
+		models.StatusHalted,
 		models.StatusClosed,
 	},
 	models.StatusInProgress: {
+		models.StatusHalted,
 		models.StatusClosed,
+	},
+	models.StatusHalted: {
+		models.StatusInProgress, // send to site — resume work
+		models.StatusClosed,     // admin force-close only
 	},
 	models.StatusClosed: {
 		models.StatusAssigned, // admin reopen — keep engineer + PO

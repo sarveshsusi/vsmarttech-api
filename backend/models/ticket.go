@@ -16,6 +16,7 @@ const (
 	StatusOpen       TicketStatus = "Open"
 	StatusAssigned   TicketStatus = "Assigned"
 	StatusInProgress TicketStatus = "In Progress"
+	StatusHalted     TicketStatus = "Halted"
 	StatusClosed     TicketStatus = "Closed"
 )
 
@@ -71,8 +72,10 @@ type Ticket struct {
 	SupportMode     SupportMode     `json:"support_mode"`
 	ServiceCallType ServiceCallType `json:"service_call_type"`
 
-	SLAHours int        `json:"sla_hours"`
-	TargetAt *time.Time `json:"target_at"`
+	SLAHours              int        `json:"sla_hours"`
+	TargetAt              *time.Time `json:"target_at"`
+	SLAPausedAt           *time.Time `json:"sla_paused_at,omitempty"`
+	SLAPausedTotalSeconds int        `json:"sla_paused_total_seconds" gorm:"not null;default:0"`
 
 	ClosureProofImage *string    `json:"closure_proof_image,omitempty"`
 	SupportComment    *string    `json:"support_comment,omitempty"`
@@ -84,6 +87,7 @@ type Ticket struct {
 	// Populated at read time (not a DB column)
 	VisitCount int                    `json:"visit_count" gorm:"-"`
 	Feedback   *TicketFeedbackSummary `json:"feedback,omitempty" gorm:"-"`
+	AssetDrop  *TicketAssetDrop       `json:"asset_drop,omitempty" gorm:"-"`
 
 	CreatedBy uuid.UUID `json:"created_by"`
 	CreatedAt time.Time `json:"created_at"`
@@ -139,6 +143,8 @@ const (
 	TicketEventAssigned   TicketEventType = "assigned"
 	TicketEventReassigned TicketEventType = "reassigned"
 	TicketEventStarted    TicketEventType = "started"
+	TicketEventHalted     TicketEventType = "halted"
+	TicketEventResumed    TicketEventType = "resumed"
 	TicketEventClosed     TicketEventType = "closed"
 	TicketEventReopened   TicketEventType = "reopened"
 )

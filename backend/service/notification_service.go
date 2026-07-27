@@ -767,6 +767,197 @@ func (s *NotificationService) NotifyTicketClosed(
 }
 
 /* =========================
+   ASSET DROP NOTIFICATIONS
+========================= */
+
+func notifStatusPtr(s models.TicketStatus) *string {
+	v := string(s)
+	return &v
+}
+
+func (s *NotificationService) NotifyAssetDropRequested(
+	ticketID string,
+	dropID uuid.UUID,
+	serialNumber string,
+	assetName string,
+) {
+	log.Printf("[NOTIFY_ASSET_DROP_REQUESTED] ticket=%s drop=%s", ticketID, dropID)
+
+	ticket, err := s.ticketRepo.GetByID(ticketID)
+	if err != nil {
+		log.Printf("[NOTIFY_ASSET_DROP_REQUESTED_ERROR] %v", err)
+		return
+	}
+
+	title := "Asset drop requested"
+	message := fmt.Sprintf(
+		"Support requested workshop intake for '%s' (S/N %s) on ticket '%s'. Acknowledge to add it to the workshop.",
+		assetName,
+		serialNumber,
+		ticket.Title,
+	)
+
+	adminUsers, err := s.userRepo.GetUsersByRole(models.RoleAdmin)
+	if err != nil {
+		log.Printf("[NOTIFY_ASSET_DROP_REQUESTED_ERROR] list admins: %v", err)
+		return
+	}
+	for _, admin := range adminUsers {
+		if err := s.CreateTicketNotification(
+			admin.ID,
+			ticketID,
+			models.NotificationTypeAssetDropRequested,
+			title,
+			message,
+			nil,
+			notifStatusPtr(models.StatusHalted),
+		); err != nil {
+			log.Printf("[NOTIFY_ASSET_DROP_REQUESTED_ERROR] admin %s: %v", admin.ID, err)
+		}
+	}
+}
+
+func (s *NotificationService) NotifyAssetDropAcknowledged(
+	ticketID string,
+	dropID uuid.UUID,
+	requestedBy uuid.UUID,
+	serialNumber string,
+) {
+	log.Printf("[NOTIFY_ASSET_DROP_ACK] ticket=%s drop=%s", ticketID, dropID)
+
+	ticket, err := s.ticketRepo.GetByID(ticketID)
+	if err != nil {
+		log.Printf("[NOTIFY_ASSET_DROP_ACK_ERROR] %v", err)
+		return
+	}
+
+	title := "Asset drop acknowledged"
+	message := fmt.Sprintf(
+		"Admin acknowledged device S/N %s for ticket '%s'. It is now in the workshop.",
+		serialNumber,
+		ticket.Title,
+	)
+
+	if requestedBy != uuid.Nil {
+		_ = s.CreateTicketNotification(
+			requestedBy,
+			ticketID,
+			models.NotificationTypeAssetDropAcknowledged,
+			title,
+			message,
+			nil,
+			nil,
+		)
+	}
+
+	if ticket.EngineerID != nil {
+		var eng models.SupportEngineer
+		if err := s.db.Preload("User").Where("id = ?", *ticket.EngineerID).First(&eng).Error; err == nil {
+			if eng.UserID != requestedBy {
+				_ = s.CreateTicketNotification(
+					eng.UserID,
+					ticketID,
+					models.NotificationTypeAssetDropAcknowledged,
+					title,
+					message,
+					nil,
+					nil,
+				)
+			}
+		}
+	}
+}
+
+func (s *NotificationService) NotifyAssetDropReturnAssigned(
+	ticketID string,
+	dropID uuid.UUID,
+	returnEngineerID uuid.UUID,
+	serialNumber string,
+) {
+	log.Printf("[NOTIFY_ASSET_DROP_RETURN] ticket=%s drop=%s engineer=%s", ticketID, dropID, returnEngineerID)
+
+	ticket, err := s.ticketRepo.GetByID(ticketID)
+	if err != nil {
+		log.Printf("[NOTIFY_ASSET_DROP_RETURN_ERROR] %v", err)
+		return
+	}
+
+	var eng models.SupportEngineer
+	if err := s.db.Preload("User").Where("id = ?", returnEngineerID).First(&eng).Error; err != nil {
+		log.Printf("[NOTIFY_ASSET_DROP_RETURN_ERROR] engineer: %v", err)
+		return
+	}
+
+	title := "Device return assigned"
+	message := fmt.Sprintf(
+		"You are assigned to return device S/N %s to site for ticket '%s'.",
+		serialNumber,
+		ticket.Title,
+	)
+	_ = s.CreateTicketNotification(
+		eng.UserID,
+		ticketID,
+		models.NotificationTypeAssetDropReturnAssigned,
+		title,
+		message,
+		nil,
+		nil,
+	)
+}
+
+func (s *NotificationService) NotifyAssetDropReturned(
+	ticketID string,
+	dropID uuid.UUID,
+	serialNumber string,
+) {
+	log.Printf("[NOTIFY_ASSET_DROP_RETURNED] ticket=%s drop=%s", ticketID, dropID)
+
+	ticket, err := s.ticketRepo.GetByID(ticketID)
+	if err != nil {
+		log.Printf("[NOTIFY_ASSET_DROP_RETURNED_ERROR] %v", err)
+		return
+	}
+
+	title := "Device returned to site"
+	message := fmt.Sprintf(
+		"Device S/N %s for ticket '%s' was marked returned to site. The ticket is no longer halted — you can continue and close it.",
+		serialNumber,
+		ticket.Title,
+	)
+
+	if ticket.EngineerID != nil {
+		var eng models.SupportEngineer
+		if err := s.db.Preload("User").Where("id = ?", *ticket.EngineerID).First(&eng).Error; err == nil {
+			_ = s.CreateTicketNotification(
+				eng.UserID,
+				ticketID,
+				models.NotificationTypeAssetDropReturned,
+				title,
+				message,
+				notifStatusPtr(models.StatusHalted),
+				notifStatusPtr(models.StatusInProgress),
+			)
+		}
+	}
+
+	adminUsers, err := s.userRepo.GetUsersByRole(models.RoleAdmin)
+	if err != nil {
+		return
+	}
+	for _, admin := range adminUsers {
+		_ = s.CreateTicketNotification(
+			admin.ID,
+			ticketID,
+			models.NotificationTypeAssetDropReturned,
+			title,
+			fmt.Sprintf("Device S/N %s for ticket '%s' was sent to site; ticket resumed.", serialNumber, ticket.Title),
+			notifStatusPtr(models.StatusHalted),
+			notifStatusPtr(models.StatusInProgress),
+		)
+	}
+}
+
+/* =========================
    FEEDBACK RECEIVED NOTIFICATION
 ========================= */
 

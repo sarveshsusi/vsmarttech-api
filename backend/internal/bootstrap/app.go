@@ -150,9 +150,18 @@ func wireHTTP(
 	assetRepo := repository.NewAssetRepository(db)
 	assetService := service.NewAssetService(assetRepo, ticketRepo, customerSolutionRepo, companyRepo)
 	assetHandler := handler.NewAssetHandler(assetService)
-	ticketHandler := handler.NewTicketHandler(ticketService, imageUploader)
+	assetDropRepo := repository.NewAssetDropRepository(db)
+	assetDropService := service.NewAssetDropService(
+		db,
+		assetDropRepo,
+		ticketRepo,
+		assetRepo,
+		supportEngineerRepo,
+		notificationService,
+	)
+	ticketHandler := handler.NewTicketHandler(ticketService, assetDropService, imageUploader)
 	feedbackHandler := handler.NewFeedbackHandler(feedbackService)
-	supportEngineerHandler := handler.NewSupportEngineerHandler(supportEngineerService, supportService)
+	supportEngineerHandler := handler.NewSupportEngineerHandler(supportEngineerService, supportService, assetDropService)
 	notificationHandler := handler.NewNotificationHandler(notificationService)
 	contractHandler := handler.NewContractHandler(app.ContractExpiryService)
 	amcHandler := handler.NewAMCAssignmentHandler(amcService, imageUploader, supportEngineerRepo)

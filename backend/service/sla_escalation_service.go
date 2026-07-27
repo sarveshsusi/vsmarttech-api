@@ -92,7 +92,7 @@ func (s *SLAEscalationService) CheckAndEscalateTickets(ctx context.Context) erro
 	var tickets []models.Ticket
 
 	if err := s.db.WithContext(ctx).
-		Where("status != ?", "Closed").
+		Where("status != ? AND status != ? AND sla_paused_at IS NULL", "Closed", "Halted").
 		Preload("SupportEngineer").
 		Preload("Customer").
 		Find(&tickets).Error; err != nil {

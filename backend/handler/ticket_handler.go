@@ -17,17 +17,20 @@ import (
 )
 
 type TicketHandler struct {
-	service  *service.TicketService
-	uploader utils.ImageUploader
+	service   *service.TicketService
+	assetDrop *service.AssetDropService
+	uploader  utils.ImageUploader
 }
 
 func NewTicketHandler(
 	s *service.TicketService,
+	assetDrop *service.AssetDropService,
 	uploader utils.ImageUploader,
 ) *TicketHandler {
 	return &TicketHandler{
-		service:  s,
-		uploader: uploader,
+		service:   s,
+		assetDrop: assetDrop,
+		uploader:  uploader,
 	}
 }
 
@@ -293,6 +296,9 @@ func (h *TicketHandler) GetAdminTickets(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid request"})
 		return
 	}
+	if h.assetDrop != nil {
+		h.assetDrop.AttachLatestToTickets(tickets)
+	}
 	c.JSON(http.StatusOK, tickets)
 }
 
@@ -356,6 +362,9 @@ func (h *TicketHandler) GetTicketById(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Ticket not found"})
 		return
+	}
+	if h.assetDrop != nil {
+		h.assetDrop.AttachLatestToTicket(ticket)
 	}
 
 	c.JSON(http.StatusOK, ticket)
@@ -787,4 +796,169 @@ func (h *TicketHandler) AddTicketComment(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, comment)
+}
+
+/* =========================
+   ASSET DROP WORKFLOW
+========================= */
+
+type RequestAssetDropBody struct {
+	TicketID      string `json:"ticket_id" binding:"required"`
+	SerialNumber  string `json:"serial_number" binding:"required"`
+	Name          string `json:"name" binding:"required"`
+	Model         string `json:"model"`
+	Category      string `json:"category"`
+	Site          string `json:"site"`
+	Location      string `json:"location"`
+	IsReplacement bool   `json:"is_replacement"`
+}
+
+type AssetDropIDBody struct {
+	DropID uuid.UUID `json:"drop_id" binding:"required"`
+}
+
+type AssignReturnEngineerBody struct {
+	DropID     uuid.UUID `json:"drop_id" binding:"required"`
+	EngineerID uuid.UUID `json:"engineer_id" binding:"required"`
+}
+
+func (h *TicketHandler) RequestAssetDrop(c *gin.Context) {
+	if h.assetDrop == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "asset drop service unavailable"})
+		return
+	}
+	userID := c.MustGet("user_id").(uuid.UUID)
+	var req RequestAssetDropBody
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ticket_id, serial_number, and name are required"})
+		return
+	}
+	drop, err := h.assetDrop.RequestAssetDrop(userID, service.CreateAssetDropInput{
+		TicketID:      req.TicketID,
+		SerialNumber:  req.SerialNumber,
+		Name:          req.Name,
+		Model:         req.Model,
+		Category:      req.Category,
+		Site:          req.Site,
+		Location:      req.Location,
+		IsReplacement: req.IsReplacement,
+	})
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, drop)
+}
+
+func (h *TicketHandler) AcknowledgeAssetDrop(c *gin.Context) {
+	if h.assetDrop == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "asset drop service unavailable"})
+		return
+	}
+	adminID := c.MustGet("user_id").(uuid.UUID)
+	var req AssetDropIDBody
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "drop_id is required"})
+		return
+	}
+	drop, err := h.assetDrop.Acknowledge(adminID, req.DropID)
+	if err != nil {
+		status := http.StatusBadRequest
+		if strings.Contains(strings.ToLower(err.Error()), "already exists") {
+			status = http.StatusConflict
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, drop)
+}
+
+func (h *TicketHandler) AssignAssetDropReturn(c *gin.Context) {
+	if h.assetDrop == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "asset drop service unavailable"})
+		return
+	}
+	adminID := c.MustGet("user_id").(uuid.UUID)
+	var req AssignReturnEngineerBody
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "drop_id and engineer_id are required"})
+		return
+	}
+	drop, err := h.assetDrop.AssignReturnEngineer(adminID, req.DropID, req.EngineerID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, drop)
+}
+
+func (h *TicketHandler) SendAssetDropToSite(c *gin.Context) {
+	if h.assetDrop == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "asset drop service unavailable"})
+		return
+	}
+	adminID := c.MustGet("user_id").(uuid.UUID)
+	var req AssetDropIDBody
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "drop_id is required"})
+		return
+	}
+	drop, err := h.assetDrop.SendToSite(adminID, req.DropID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, drop)
+}
+
+func (h *TicketHandler) ListAdminAssetDrops(c *gin.Context) {
+	if h.assetDrop == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "asset drop service unavailable"})
+		return
+	}
+	statusQ := strings.TrimSpace(c.Query("status"))
+	var statuses []models.AssetDropStatus
+	if statusQ != "" {
+		for _, part := range strings.Split(statusQ, ",") {
+			part = strings.TrimSpace(part)
+			if part != "" {
+				statuses = append(statuses, models.AssetDropStatus(part))
+			}
+		}
+	}
+	drops, err := h.assetDrop.ListAdmin(statuses)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load asset drops"})
+		return
+	}
+	if drops == nil {
+		drops = []models.TicketAssetDrop{}
+	}
+	c.JSON(http.StatusOK, drops)
+}
+
+func (h *TicketHandler) ListSupportAssetDrops(c *gin.Context) {
+	if h.assetDrop == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "asset drop service unavailable"})
+		return
+	}
+	userID := c.MustGet("user_id").(uuid.UUID)
+	returnOnly := strings.EqualFold(c.Query("return_only"), "true") || c.Query("return_only") == "1"
+	var (
+		drops []models.TicketAssetDrop
+		err   error
+	)
+	if returnOnly {
+		drops, err = h.assetDrop.ListReturnAssignments(userID)
+	} else {
+		drops, err = h.assetDrop.ListForSupportUser(userID)
+	}
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if drops == nil {
+		drops = []models.TicketAssetDrop{}
+	}
+	c.JSON(http.StatusOK, drops)
 }

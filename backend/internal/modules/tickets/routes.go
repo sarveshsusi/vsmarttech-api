@@ -31,6 +31,10 @@ func RegisterAdmin(admin *gin.RouterGroup, h Handlers) {
 	admin.GET("/tickets/visits", h.Ticket.ListAdminTicketVisits)
 	admin.GET("/tickets/comments", h.Ticket.ListTicketComments)
 	admin.POST("/tickets/comments", h.Ticket.AddTicketComment)
+	admin.GET("/tickets/asset-drops", h.Ticket.ListAdminAssetDrops)
+	admin.POST("/tickets/asset-drop/acknowledge", h.Ticket.AcknowledgeAssetDrop)
+	admin.POST("/tickets/asset-drop/assign-return", h.Ticket.AssignAssetDropReturn)
+	admin.POST("/tickets/asset-drop/send-to-site", h.Ticket.SendAssetDropToSite)
 }
 
 // RegisterSupport mounts support ticket lifecycle routes.
@@ -41,6 +45,8 @@ func RegisterSupport(support *gin.RouterGroup, h Handlers) {
 	support.POST("/tickets/visits", h.Ticket.CreateSupportTicketVisit)
 	support.GET("/tickets/comments", h.Ticket.ListTicketComments)
 	support.POST("/tickets/comments", h.Ticket.AddTicketComment)
+	support.POST("/tickets/asset-drop", h.Ticket.RequestAssetDrop)
+	support.GET("/tickets/asset-drops", h.Ticket.ListSupportAssetDrops)
 	support.GET("/feedback/me", h.Feedback.GetMine)
 	support.GET("/feedback/pending", h.Feedback.ListPending)
 }

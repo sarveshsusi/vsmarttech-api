@@ -20,6 +20,11 @@ const (
 	NotificationTypeTicketCommented     NotificationType = "ticket_commented"
 	NotificationTypeTicketStatusChanged NotificationType = "ticket_status_changed"
 
+	NotificationTypeAssetDropRequested      NotificationType = "asset_drop_requested"
+	NotificationTypeAssetDropAcknowledged   NotificationType = "asset_drop_acknowledged"
+	NotificationTypeAssetDropReturnAssigned NotificationType = "asset_drop_return_assigned"
+	NotificationTypeAssetDropReturned       NotificationType = "asset_drop_returned"
+
 	// AMC/Warranty expiry notifications (for customers)
 	NotificationTypeAMCExpiry3Months      NotificationType = "amc_expiry_3_months"
 	NotificationTypeAMCExpiry1Month       NotificationType = "amc_expiry_1_month"
