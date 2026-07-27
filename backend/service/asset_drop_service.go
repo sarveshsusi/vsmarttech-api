@@ -126,9 +126,11 @@ func (s *AssetDropService) pauseSLA(ticket *models.Ticket, now time.Time) map[st
 	return fields
 }
 
+// resumeSLAFields clears the pause and extends target_at so remaining SLA is unchanged.
+// GORM Updates skips bare nil map values — use Expr("NULL") so sla_paused_at is cleared.
 func (s *AssetDropService) resumeSLAFields(ticket *models.Ticket, now time.Time) map[string]interface{} {
 	fields := map[string]interface{}{
-		"sla_paused_at": nil,
+		"sla_paused_at": gorm.Expr("NULL"),
 		"updated_at":    now,
 	}
 	if ticket.SLAPausedAt == nil {
@@ -144,6 +146,46 @@ func (s *AssetDropService) resumeSLAFields(ticket *models.Ticket, now time.Time)
 		fields["target_at"] = extended
 	}
 	return fields
+}
+
+// resumeHaltedTicket moves Halted → In Progress and unfreezes SLA inside an existing tx.
+func (s *AssetDropService) resumeHaltedTicket(
+	tx *gorm.DB,
+	ticket *models.Ticket,
+	adminUserID uuid.UUID,
+	note string,
+	now time.Time,
+) error {
+	if ticket.Status != models.StatusHalted {
+		return nil
+	}
+	if !domain.CanTransition(ticket.Status, models.StatusInProgress) {
+		return fmt.Errorf("invalid status transition from %s to In Progress", ticket.Status)
+	}
+	ticketRepo := repository.NewTicketRepository(tx)
+	fields := s.resumeSLAFields(ticket, now)
+	fields["status"] = models.StatusInProgress
+	if err := ticketRepo.UpdateFields(ticket.ID, fields); err != nil {
+		return err
+	}
+	if err := ticketRepo.CreateStatusHistory(&models.TicketStatusHistory{
+		TicketID:  ticket.ID,
+		OldStatus: string(models.StatusHalted),
+		NewStatus: string(models.StatusInProgress),
+		ChangedBy: adminUserID,
+		ChangedAt: now,
+	}); err != nil {
+		return err
+	}
+	return ticketRepo.CreateEventTx(tx, &models.TicketEvent{
+		TicketID:    ticket.ID,
+		EventType:   models.TicketEventResumed,
+		ActorUserID: adminUserID,
+		FromStatus:  statusPtr(models.StatusHalted),
+		ToStatus:    statusPtr(models.StatusInProgress),
+		Note:        note,
+		CreatedAt:   now,
+	})
 }
 
 // RequestAssetDrop is called by the assigned support engineer.
@@ -388,7 +430,13 @@ func (s *AssetDropService) SendToSite(adminUserID uuid.UUID, dropID uuid.UUID) (
 	if err != nil {
 		return nil, errors.New("asset drop not found")
 	}
-	if drop.Status != models.AssetDropStatusReturnAssigned {
+	// Allow resume if already returned but ticket still Halted (stuck state).
+	if drop.Status != models.AssetDropStatusReturnAssigned &&
+		drop.Status != models.AssetDropStatusAcknowledged &&
+		drop.Status != models.AssetDropStatusReturned {
+		return nil, errors.New("assign a return engineer before sending to site")
+	}
+	if drop.Status == models.AssetDropStatusAcknowledged {
 		return nil, errors.New("assign a return engineer before sending to site")
 	}
 	if drop.AssetID == nil {
@@ -399,12 +447,6 @@ func (s *AssetDropService) SendToSite(adminUserID uuid.UUID, dropID uuid.UUID) (
 	if err != nil {
 		return nil, errors.New("ticket not found")
 	}
-	if ticket.Status != models.StatusHalted {
-		return nil, fmt.Errorf("ticket must be Halted to send to site (current: %s)", ticket.Status)
-	}
-	if !domain.CanTransition(ticket.Status, models.StatusInProgress) {
-		return nil, fmt.Errorf("invalid status transition from %s to In Progress", ticket.Status)
-	}
 
 	asset, err := s.assetRepo.GetByID(*drop.AssetID)
 	if err != nil {
@@ -413,57 +455,46 @@ func (s *AssetDropService) SendToSite(adminUserID uuid.UUID, dropID uuid.UUID) (
 
 	now := time.Now()
 	oldAssetStatus := asset.Status
+	alreadyReturned := models.NormalizeAssetStatus(asset.Status) == models.AssetStatusReturnedToSite
 
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		assetRepo := repository.NewAssetRepository(tx)
 		dropRepo := repository.NewAssetDropRepository(tx)
-		ticketRepo := repository.NewTicketRepository(tx)
 
-		asset.Status = models.AssetStatusReturnedToSite
-		asset.UpdatedAt = now
-		if err := assetRepo.Update(asset); err != nil {
-			return err
+		if !alreadyReturned {
+			asset.Status = models.AssetStatusReturnedToSite
+			asset.UpdatedAt = now
+			if err := assetRepo.Update(asset); err != nil {
+				return err
+			}
+			ticketID := ticket.ID
+			_ = assetRepo.CreateStatusHistory(&models.AssetStatusHistory{
+				AssetID:   asset.ID,
+				OldStatus: oldAssetStatus,
+				NewStatus: models.AssetStatusReturnedToSite,
+				TicketID:  &ticketID,
+				ChangedBy: adminUserID,
+				ChangedAt: now,
+			})
 		}
-		ticketID := ticket.ID
-		_ = assetRepo.CreateStatusHistory(&models.AssetStatusHistory{
-			AssetID:   asset.ID,
-			OldStatus: oldAssetStatus,
-			NewStatus: models.AssetStatusReturnedToSite,
-			TicketID:  &ticketID,
-			ChangedBy: adminUserID,
-			ChangedAt: now,
-		})
 
-		fields := s.resumeSLAFields(ticket, now)
-		fields["status"] = models.StatusInProgress
-		if err := ticketRepo.UpdateFields(ticket.ID, fields); err != nil {
-			return err
-		}
-		if err := ticketRepo.CreateStatusHistory(&models.TicketStatusHistory{
-			TicketID:  ticket.ID,
-			OldStatus: string(models.StatusHalted),
-			NewStatus: string(models.StatusInProgress),
-			ChangedBy: adminUserID,
-			ChangedAt: now,
-		}); err != nil {
-			return err
-		}
-		if err := ticketRepo.CreateEventTx(tx, &models.TicketEvent{
-			TicketID:    ticket.ID,
-			EventType:   models.TicketEventResumed,
-			ActorUserID: adminUserID,
-			FromStatus:  statusPtr(models.StatusHalted),
-			ToStatus:    statusPtr(models.StatusInProgress),
-			Note:        "Asset sent to site: " + drop.SerialNumber,
-			CreatedAt:   now,
-		}); err != nil {
+		if err := s.resumeHaltedTicket(
+			tx,
+			ticket,
+			adminUserID,
+			"Asset sent to site: "+drop.SerialNumber,
+			now,
+		); err != nil {
 			return err
 		}
 
-		drop.Status = models.AssetDropStatusReturned
-		drop.ReturnedAt = &now
-		drop.UpdatedAt = now
-		return dropRepo.Update(drop)
+		if drop.Status != models.AssetDropStatusReturned {
+			drop.Status = models.AssetDropStatusReturned
+			drop.ReturnedAt = &now
+			drop.UpdatedAt = now
+			return dropRepo.Update(drop)
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err
@@ -474,4 +505,53 @@ func (s *AssetDropService) SendToSite(adminUserID uuid.UUID, dropID uuid.UUID) (
 	}
 
 	return s.dropRepo.GetByID(drop.ID)
+}
+
+// CompleteReturnForAsset resumes a halted ticket when workshop marks the device
+// Returned to Site (same outcome as Send to site).
+func (s *AssetDropService) CompleteReturnForAsset(adminUserID, assetID uuid.UUID) (*models.TicketAssetDrop, error) {
+	drop, err := s.dropRepo.GetActiveByAssetID(assetID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// Maybe drop already marked returned but ticket still Halted.
+			latest, lerr := s.dropRepo.GetLatestByAssetID(assetID)
+			if lerr != nil {
+				return nil, nil
+			}
+			ticket, terr := s.ticketRepo.GetByID(latest.TicketID)
+			if terr != nil || ticket.Status != models.StatusHalted {
+				return nil, nil
+			}
+			return s.SendToSite(adminUserID, latest.ID)
+		}
+		return nil, err
+	}
+
+	// Auto-assign return engineer gate: if still only acknowledged, require assign first
+	// unless we allow completing from workshop. User flow: workshop Returned to Site should
+	// un-halt. Promote acknowledged → return_assigned with ticket engineer if needed.
+	if drop.Status == models.AssetDropStatusRequested {
+		return nil, nil // not yet in workshop
+	}
+
+	if drop.Status == models.AssetDropStatusAcknowledged {
+		ticket, terr := s.ticketRepo.GetByID(drop.TicketID)
+		if terr != nil {
+			return nil, terr
+		}
+		if ticket.EngineerID != nil {
+			now := time.Now()
+			drop.ReturnEngineerID = ticket.EngineerID
+			drop.Status = models.AssetDropStatusReturnAssigned
+			drop.ReturnAssignedAt = &now
+			drop.UpdatedAt = now
+			if err := s.dropRepo.Update(drop); err != nil {
+				return nil, err
+			}
+		} else {
+			return nil, errors.New("assign a return engineer before returning to site")
+		}
+	}
+
+	return s.SendToSite(adminUserID, drop.ID)
 }

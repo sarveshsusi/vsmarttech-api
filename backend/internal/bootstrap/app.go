@@ -4,6 +4,7 @@ import (
 	"log"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 
 	"rbac/config"
@@ -159,6 +160,10 @@ func wireHTTP(
 		supportEngineerRepo,
 		notificationService,
 	)
+	assetService.SetOnReturnedToSite(func(adminID, assetID uuid.UUID) error {
+		_, err := assetDropService.CompleteReturnForAsset(adminID, assetID)
+		return err
+	})
 	ticketHandler := handler.NewTicketHandler(ticketService, assetDropService, imageUploader)
 	feedbackHandler := handler.NewFeedbackHandler(feedbackService)
 	supportEngineerHandler := handler.NewSupportEngineerHandler(supportEngineerService, supportService, assetDropService)

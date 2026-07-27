@@ -37,6 +37,42 @@ func (r *AssetDropRepository) GetByID(id uuid.UUID) (*models.TicketAssetDrop, er
 	return &drop, nil
 }
 
+func (r *AssetDropRepository) GetActiveByAssetID(assetID uuid.UUID) (*models.TicketAssetDrop, error) {
+	var drop models.TicketAssetDrop
+	err := r.db.
+		Preload("ReturnEngineer").
+		Preload("ReturnEngineer.User").
+		Preload("Asset").
+		Where(
+			"asset_id = ? AND status IN ?",
+			assetID,
+			[]models.AssetDropStatus{
+				models.AssetDropStatusRequested,
+				models.AssetDropStatusAcknowledged,
+				models.AssetDropStatusReturnAssigned,
+			},
+		).
+		Order("created_at DESC").
+		First(&drop).Error
+	if err != nil {
+		return nil, err
+	}
+	return &drop, nil
+}
+
+func (r *AssetDropRepository) GetLatestByAssetID(assetID uuid.UUID) (*models.TicketAssetDrop, error) {
+	var drop models.TicketAssetDrop
+	err := r.db.
+		Preload("Asset").
+		Where("asset_id = ?", assetID).
+		Order("created_at DESC").
+		First(&drop).Error
+	if err != nil {
+		return nil, err
+	}
+	return &drop, nil
+}
+
 func (r *AssetDropRepository) GetActiveByTicketID(ticketID string) (*models.TicketAssetDrop, error) {
 	var drop models.TicketAssetDrop
 	err := r.db.

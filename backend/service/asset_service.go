@@ -16,6 +16,7 @@ type AssetService struct {
 	ticketRepo           *repository.TicketRepository
 	customerSolutionRepo *repository.CustomerSolutionRepository
 	companyRepo          repository.CompanyRepository
+	onReturnedToSite     func(adminID, assetID uuid.UUID) error
 }
 
 func NewAssetService(
@@ -30,6 +31,12 @@ func NewAssetService(
 		customerSolutionRepo: customerSolutionRepo,
 		companyRepo:          companyRepo,
 	}
+}
+
+// SetOnReturnedToSite registers a hook (asset-drop resume) after material status
+// becomes Returned to Site.
+func (s *AssetService) SetOnReturnedToSite(fn func(adminID, assetID uuid.UUID) error) {
+	s.onReturnedToSite = fn
 }
 
 type AssetInput struct {
@@ -213,6 +220,11 @@ func (s *AssetService) Update(id uuid.UUID, adminID uuid.UUID, in AssetInput) (*
 	}
 	if models.NormalizeAssetStatus(oldStatus) != models.NormalizeAssetStatus(asset.Status) {
 		s.recordStatusChange(id, oldStatus, asset.Status, adminID, s.linkedTicketIDPtr(id))
+		if models.NormalizeAssetStatus(asset.Status) == models.AssetStatusReturnedToSite && s.onReturnedToSite != nil {
+			if err := s.onReturnedToSite(adminID, id); err != nil {
+				return nil, err
+			}
+		}
 	}
 	return s.repo.GetByID(id)
 }
@@ -236,6 +248,13 @@ func (s *AssetService) UpdateStatus(id uuid.UUID, status models.AssetStatus, adm
 		return nil, err
 	}
 	s.recordStatusChange(id, oldStatus, newStatus, adminID, s.linkedTicketIDPtr(id))
+
+	if newStatus == models.AssetStatusReturnedToSite && s.onReturnedToSite != nil {
+		if err := s.onReturnedToSite(adminID, id); err != nil {
+			return nil, err
+		}
+	}
+
 	return s.repo.GetByID(id)
 }
 
