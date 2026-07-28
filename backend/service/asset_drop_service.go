@@ -208,8 +208,8 @@ func (s *AssetDropService) RequestAssetDrop(userID uuid.UUID, in CreateAssetDrop
 	if ticket.EngineerID == nil || *ticket.EngineerID != engineer.ID {
 		return nil, errors.New("you are not assigned to this ticket")
 	}
-	if ticket.Status != models.StatusAssigned && ticket.Status != models.StatusInProgress {
-		return nil, fmt.Errorf("asset drop can only be requested while ticket is Assigned or In Progress (current: %s)", ticket.Status)
+	if ticket.Status != models.StatusInProgress {
+		return nil, fmt.Errorf("asset drop can only be requested after starting the ticket (current: %s)", ticket.Status)
 	}
 	if err := assertTicketTransition(ticket.Status, models.StatusHalted); err != nil {
 		return nil, err
