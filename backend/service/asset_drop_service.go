@@ -215,8 +215,8 @@ func (s *AssetDropService) RequestAssetDrop(userID uuid.UUID, in CreateAssetDrop
 		return nil, err
 	}
 
-	if _, err := s.dropRepo.GetActiveByTicketID(ticket.ID); err == nil {
-		return nil, errors.New("an active asset drop already exists for this ticket")
+	if _, err := s.dropRepo.GetLatestByTicketID(ticket.ID); err == nil {
+		return nil, errors.New("an asset drop already exists for this ticket")
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
