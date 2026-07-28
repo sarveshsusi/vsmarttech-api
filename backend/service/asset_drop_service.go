@@ -432,12 +432,11 @@ func (s *AssetDropService) SendToSite(adminUserID uuid.UUID, dropID uuid.UUID) (
 	}
 	// Allow resume if already returned but ticket still Halted (stuck state).
 	if drop.Status != models.AssetDropStatusReturnAssigned &&
-		drop.Status != models.AssetDropStatusAcknowledged &&
 		drop.Status != models.AssetDropStatusReturned {
-		return nil, errors.New("assign a return engineer before sending to site")
+		return nil, errors.New("assign a return engineer before returning to site")
 	}
-	if drop.Status == models.AssetDropStatusAcknowledged {
-		return nil, errors.New("assign a return engineer before sending to site")
+	if drop.Status == models.AssetDropStatusReturnAssigned && drop.ReturnEngineerID == nil {
+		return nil, errors.New("assign a return engineer before returning to site")
 	}
 	if drop.AssetID == nil {
 		return nil, errors.New("asset drop has no linked asset")
@@ -527,30 +526,14 @@ func (s *AssetDropService) CompleteReturnForAsset(adminUserID, assetID uuid.UUID
 		return nil, err
 	}
 
-	// Auto-assign return engineer gate: if still only acknowledged, require assign first
-	// unless we allow completing from workshop. User flow: workshop Returned to Site should
-	// un-halt. Promote acknowledged → return_assigned with ticket engineer if needed.
+	// Workshop "Returned to Site" must not bypass engineer selection.
+	// Admin must assign who will return to site first (ticket asset-drop panel).
 	if drop.Status == models.AssetDropStatusRequested {
 		return nil, nil // not yet in workshop
 	}
 
-	if drop.Status == models.AssetDropStatusAcknowledged {
-		ticket, terr := s.ticketRepo.GetByID(drop.TicketID)
-		if terr != nil {
-			return nil, terr
-		}
-		if ticket.EngineerID != nil {
-			now := time.Now()
-			drop.ReturnEngineerID = ticket.EngineerID
-			drop.Status = models.AssetDropStatusReturnAssigned
-			drop.ReturnAssignedAt = &now
-			drop.UpdatedAt = now
-			if err := s.dropRepo.Update(drop); err != nil {
-				return nil, err
-			}
-		} else {
-			return nil, errors.New("assign a return engineer before returning to site")
-		}
+	if drop.Status == models.AssetDropStatusAcknowledged || drop.ReturnEngineerID == nil {
+		return nil, errors.New("assign a return engineer before returning to site")
 	}
 
 	return s.SendToSite(adminUserID, drop.ID)

@@ -888,9 +888,9 @@ func (s *NotificationService) NotifyAssetDropReturnAssigned(
 		return
 	}
 
-	title := "Device return assigned"
+	title := "Please return to site"
 	message := fmt.Sprintf(
-		"You are assigned to return device S/N %s to site for ticket '%s'.",
+		"Please return to site: device S/N %s for ticket '%s' is assigned to you for return.",
 		serialNumber,
 		ticket.Title,
 	)
