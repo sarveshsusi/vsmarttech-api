@@ -59,6 +59,23 @@ jobs:
             git checkout master
             git reset --hard origin/master
 
+            echo "Sync WhatsApp Studio notify env..."
+            upsert_env() {
+              key="$1"
+              val="$2"
+              if [ -z "$val" ]; then
+                echo "Skipping empty $key"
+                return 0
+              fi
+              if grep -q "^${key}=" .env 2>/dev/null; then
+                sed -i "s|^${key}=.*|${key}=${val}|" .env
+              else
+                printf '\n%s=%s\n' "$key" "$val" >> .env
+              fi
+            }
+            upsert_env WA_STUDIO_NOTIFY_URL "${{ secrets.WA_STUDIO_NOTIFY_URL }}"
+            upsert_env WA_STUDIO_SHARED_SECRET "${{ secrets.WA_STUDIO_SHARED_SECRET }}"
+
             echo "Pull latest Docker image..."
             docker compose pull
 
