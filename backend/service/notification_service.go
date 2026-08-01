@@ -305,6 +305,15 @@ func (s *NotificationService) NotifyTicketCreated(
 	err = s.db.Where("id = ?", customerID).First(&customer).Error
 	if err != nil {
 		log.Printf("[NOTIFY_TICKET_CREATED_WARN] Failed to get customer: %v", err)
+	} else {
+		utils.NotifyCustomerWhatsApp(utils.WhatsAppNotifyPayload{
+			Event:         "ticket.created",
+			TicketID:      ticketID,
+			Status:        string(ticket.Status),
+			Title:         ticket.Title,
+			CustomerPhone: utils.FormatCustomerPhoneForWhatsApp(customer.Phone),
+			CustomerName:  customer.Name,
+		})
 	}
 
 	// Notify admins about new ticket
@@ -407,6 +416,15 @@ func (s *NotificationService) NotifyTicketStatusChanged(
 	err = s.db.Where("id = ?", ticket.CustomerID).First(&customer).Error
 	if err != nil {
 		log.Printf("[NOTIFY_STATUS_CHANGED_WARN] Failed to get customer: %v", err)
+	} else {
+		utils.NotifyCustomerWhatsApp(utils.WhatsAppNotifyPayload{
+			Event:         "ticket.status_changed",
+			TicketID:      ticketID,
+			Status:        newStatus,
+			Title:         ticket.Title,
+			CustomerPhone: utils.FormatCustomerPhoneForWhatsApp(customer.Phone),
+			CustomerName:  customer.Name,
+		})
 	}
 
 	// Notify customer about status change
@@ -645,6 +663,15 @@ func (s *NotificationService) NotifyTicketClosed(
 	err = s.db.Where("id = ?", ticket.CustomerID).First(&customer).Error
 	if err != nil {
 		log.Printf("[NOTIFY_CLOSED_WARN] Failed to get customer: %v", err)
+	} else {
+		utils.NotifyCustomerWhatsApp(utils.WhatsAppNotifyPayload{
+			Event:         "ticket.closed",
+			TicketID:      ticketID,
+			Status:        "Closed",
+			Title:         ticket.Title,
+			CustomerPhone: utils.FormatCustomerPhoneForWhatsApp(customer.Phone),
+			CustomerName:  customer.Name,
+		})
 	}
 
 	// Get the engineer name if available
