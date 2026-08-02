@@ -20,6 +20,20 @@ type Config struct {
 	Storage     StorageConfig
 	AWS         AWSConfig
 	Image       ImageConfig
+	Studio      StudioConfig
+}
+
+/* =====================
+   WhatsApp Studio (public API)
+===================== */
+
+type StudioConfig struct {
+	BaseURL         string
+	APIKey          string
+	TemplateLang    string
+	TemplateCreated string
+	TemplateStatus  string
+	TemplateClosed  string
 }
 
 type ServerConfig struct {
@@ -243,6 +257,15 @@ func LoadConfig() *Config {
 			MaxSizeBytes:           getEnvAsInt64("IMAGE_MAX_SIZE_BYTES", 1048576),         // 1 MB
 			CompressThresholdBytes: getEnvAsInt64("IMAGE_COMPRESS_THRESHOLD_BYTES", 51200), // 50 KB
 			Quality:                getEnvAsInt("IMAGE_QUALITY", 85),
+		},
+
+		Studio: StudioConfig{
+			BaseURL:         getEnv("WA_STUDIO_BASE_URL", ""),
+			APIKey:          getEnv("WA_STUDIO_API_KEY", ""),
+			TemplateLang:    getEnv("WA_STUDIO_TEMPLATE_LANG", "en_US"),
+			TemplateCreated: getEnv("WA_STUDIO_TEMPLATE_CREATED", ""),
+			TemplateStatus:  getEnv("WA_STUDIO_TEMPLATE_STATUS", ""),
+			TemplateClosed:  getEnv("WA_STUDIO_TEMPLATE_CLOSED", ""),
 		},
 	}
 }

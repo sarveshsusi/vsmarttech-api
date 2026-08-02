@@ -54,6 +54,14 @@ func New(opts Options) (*App, error) {
 	db := database.DB
 	mailer := utils.NewMailer(cfg.Mail)
 	webPusher := utils.NewWebPusher(cfg.VAPID)
+	studioClient := utils.NewStudioClient(utils.StudioConfig{
+		BaseURL:         cfg.Studio.BaseURL,
+		APIKey:          cfg.Studio.APIKey,
+		TemplateLang:    cfg.Studio.TemplateLang,
+		TemplateCreated: cfg.Studio.TemplateCreated,
+		TemplateStatus:  cfg.Studio.TemplateStatus,
+		TemplateClosed:  cfg.Studio.TemplateClosed,
+	})
 
 	authRepo := repository.NewAuthRepository(db)
 	customerRepo := repository.NewCustomerRepository(db)
@@ -66,7 +74,7 @@ func New(opts Options) (*App, error) {
 	dashboardURL := cfg.FrontendURL
 
 	notificationService := service.NewNotificationService(
-		db, notificationRepo, pushRepo, ticketRepo, userRepo, customerRepo, mailer, webPusher, cfg.FrontendURL,
+		db, notificationRepo, pushRepo, ticketRepo, userRepo, customerRepo, mailer, webPusher, studioClient, cfg.FrontendURL,
 	)
 
 	contractExpiryService := service.NewContractExpiryService(

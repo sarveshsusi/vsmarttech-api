@@ -25,6 +25,7 @@ type NotificationService struct {
 	customerRepo *repository.CustomerRepository
 	mailer       *utils.Mailer
 	webPusher    *utils.WebPusher
+	studio       *utils.StudioClient
 	frontendURL  string
 }
 
@@ -37,6 +38,7 @@ func NewNotificationService(
 	customerRepo *repository.CustomerRepository,
 	mailer *utils.Mailer,
 	webPusher *utils.WebPusher,
+	studio *utils.StudioClient,
 	frontendURL string,
 ) *NotificationService {
 	return &NotificationService{
@@ -48,6 +50,7 @@ func NewNotificationService(
 		customerRepo: customerRepo,
 		mailer:       mailer,
 		webPusher:    webPusher,
+		studio:       studio,
 		frontendURL:  strings.TrimRight(frontendURL, "/"),
 	}
 }
@@ -380,6 +383,15 @@ func (s *NotificationService) NotifyTicketCreated(
 		log.Printf("[NOTIFY_TICKET_CREATED_WARN] Customer not found or no UserID, skipping customer notification")
 	}
 
+	if s.studio != nil && customer.Phone != "" {
+		s.studio.NotifyTicketCreatedWhatsApp(
+			customer.Phone,
+			customer.Name,
+			ticket.ID,
+			ticket.Title,
+		)
+	}
+
 	log.Printf("[NOTIFY_TICKET_CREATED_SUCCESS] Notifications created for ticketID=%s", ticketID)
 	return nil
 }
@@ -507,6 +519,16 @@ func (s *NotificationService) NotifyTicketStatusChanged(
 				log.Printf("[NOTIFICATION_CREATED] admin user_id=%s ticket_id=%s type=ticket_status_changed", admin.ID, ticketID)
 			}
 		}
+	}
+
+	if s.studio != nil && customer.Phone != "" {
+		s.studio.NotifyTicketStatusWhatsApp(
+			customer.Phone,
+			customer.Name,
+			ticket.ID,
+			newStatus,
+			ticket.Title,
+		)
 	}
 
 	log.Printf("[NOTIFY_STATUS_CHANGED_SUCCESS] Notifications sent for ticketID=%s", ticketID)
@@ -710,6 +732,15 @@ func (s *NotificationService) NotifyTicketClosed(
 		} else {
 			log.Printf("[NOTIFICATION_CREATED] customer user_id=%s ticket_id=%s type=ticket_closed", customer.UserID, ticketID)
 		}
+	}
+
+	if s.studio != nil && customer.Phone != "" {
+		s.studio.NotifyTicketClosedWhatsApp(
+			customer.Phone,
+			customer.Name,
+			ticket.ID,
+			ticket.Title,
+		)
 	}
 
 	// Notify support engineer (if assigned) about closure
