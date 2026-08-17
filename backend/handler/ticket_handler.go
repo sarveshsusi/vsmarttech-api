@@ -911,6 +911,25 @@ func (h *TicketHandler) SendAssetDropToSite(c *gin.Context) {
 	c.JSON(http.StatusOK, drop)
 }
 
+func (h *TicketHandler) ConfirmAssetDropDelivered(c *gin.Context) {
+	if h.assetDrop == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "asset drop service unavailable"})
+		return
+	}
+	userID := c.MustGet("user_id").(uuid.UUID)
+	var req AssetDropIDBody
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "drop_id is required"})
+		return
+	}
+	drop, err := h.assetDrop.ConfirmDelivered(userID, req.DropID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, drop)
+}
+
 func (h *TicketHandler) ListAdminAssetDrops(c *gin.Context) {
 	if h.assetDrop == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "asset drop service unavailable"})

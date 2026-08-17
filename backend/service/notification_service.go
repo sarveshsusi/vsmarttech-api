@@ -919,9 +919,9 @@ func (s *NotificationService) NotifyAssetDropReturnAssigned(
 		return
 	}
 
-	title := "Please return to site"
+	title := "Ready to return"
 	message := fmt.Sprintf(
-		"Please return to site: device S/N %s for ticket '%s' is assigned to you for return.",
+		"Device S/N %s for ticket '%s' is ready to return. Please deliver the product to the customer site, then mark it as delivered.",
 		serialNumber,
 		ticket.Title,
 	)
@@ -949,9 +949,9 @@ func (s *NotificationService) NotifyAssetDropReturned(
 		return
 	}
 
-	title := "Device returned to site"
+	title := "Product delivered"
 	message := fmt.Sprintf(
-		"Device S/N %s for ticket '%s' was marked returned to site. The ticket is no longer halted — you can continue and close it.",
+		"Product S/N %s for ticket '%s' was marked delivered. The ticket is no longer halted — you can continue and close it.",
 		serialNumber,
 		ticket.Title,
 	)
@@ -981,7 +981,7 @@ func (s *NotificationService) NotifyAssetDropReturned(
 			ticketID,
 			models.NotificationTypeAssetDropReturned,
 			title,
-			fmt.Sprintf("Device S/N %s for ticket '%s' was sent to site; ticket resumed.", serialNumber, ticket.Title),
+			fmt.Sprintf("Product S/N %s for ticket '%s' was delivered; ticket resumed.", serialNumber, ticket.Title),
 			notifStatusPtr(models.StatusHalted),
 			notifStatusPtr(models.StatusInProgress),
 		)

@@ -46,6 +46,7 @@ func RegisterSupport(support *gin.RouterGroup, h Handlers) {
 	support.GET("/tickets/comments", h.Ticket.ListTicketComments)
 	support.POST("/tickets/comments", h.Ticket.AddTicketComment)
 	support.POST("/tickets/asset-drop", h.Ticket.RequestAssetDrop)
+	support.POST("/tickets/asset-drop/delivered", h.Ticket.ConfirmAssetDropDelivered)
 	support.GET("/tickets/asset-drops", h.Ticket.ListSupportAssetDrops)
 	support.GET("/feedback/me", h.Feedback.GetMine)
 	support.GET("/feedback/pending", h.Feedback.ListPending)

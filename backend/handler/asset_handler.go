@@ -216,14 +216,24 @@ func (h *AssetHandler) UpdateStatus(c *gin.Context) {
 		return
 	}
 	var body struct {
-		Status string `json:"status" binding:"required"`
+		Status           string `json:"status" binding:"required"`
+		ReturnEngineerID string `json:"return_engineer_id"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "status is required"})
 		return
 	}
 	adminID := c.MustGet("user_id").(uuid.UUID)
-	asset, err := h.service.UpdateStatus(id, models.AssetStatus(body.Status), adminID)
+	var returnEngineerID *uuid.UUID
+	if strings.TrimSpace(body.ReturnEngineerID) != "" {
+		id, err := uuid.Parse(strings.TrimSpace(body.ReturnEngineerID))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid return_engineer_id"})
+			return
+		}
+		returnEngineerID = &id
+	}
+	asset, err := h.service.UpdateStatus(id, models.AssetStatus(body.Status), adminID, returnEngineerID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

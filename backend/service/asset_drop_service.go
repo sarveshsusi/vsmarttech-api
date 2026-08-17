@@ -152,8 +152,9 @@ func (s *AssetDropService) resumeSLAFields(ticket *models.Ticket, now time.Time)
 func (s *AssetDropService) resumeHaltedTicket(
 	tx *gorm.DB,
 	ticket *models.Ticket,
-	adminUserID uuid.UUID,
+	actorUserID uuid.UUID,
 	note string,
+	eventType models.TicketEventType,
 	now time.Time,
 ) error {
 	if ticket.Status != models.StatusHalted {
@@ -161,6 +162,9 @@ func (s *AssetDropService) resumeHaltedTicket(
 	}
 	if !domain.CanTransition(ticket.Status, models.StatusInProgress) {
 		return fmt.Errorf("invalid status transition from %s to In Progress", ticket.Status)
+	}
+	if eventType == "" {
+		eventType = models.TicketEventResumed
 	}
 	ticketRepo := repository.NewTicketRepository(tx)
 	fields := s.resumeSLAFields(ticket, now)
@@ -172,15 +176,15 @@ func (s *AssetDropService) resumeHaltedTicket(
 		TicketID:  ticket.ID,
 		OldStatus: string(models.StatusHalted),
 		NewStatus: string(models.StatusInProgress),
-		ChangedBy: adminUserID,
+		ChangedBy: actorUserID,
 		ChangedAt: now,
 	}); err != nil {
 		return err
 	}
 	return ticketRepo.CreateEventTx(tx, &models.TicketEvent{
 		TicketID:    ticket.ID,
-		EventType:   models.TicketEventResumed,
-		ActorUserID: adminUserID,
+		EventType:   eventType,
+		ActorUserID: actorUserID,
 		FromStatus:  statusPtr(models.StatusHalted),
 		ToStatus:    statusPtr(models.StatusInProgress),
 		Note:        note,
@@ -400,7 +404,7 @@ func (s *AssetDropService) AssignReturnEngineer(adminUserID uuid.UUID, dropID, e
 		return nil, errors.New("asset drop not found")
 	}
 	if drop.Status != models.AssetDropStatusAcknowledged && drop.Status != models.AssetDropStatusReturnAssigned {
-		return nil, fmt.Errorf("return engineer can only be assigned after acknowledgement (current: %s)", drop.Status)
+		return nil, fmt.Errorf("return engineer can only be assigned when marking ready to return (current: %s)", drop.Status)
 	}
 
 	exists, err := s.ticketRepo.SupportEngineerExists(engineerID)
@@ -409,34 +413,75 @@ func (s *AssetDropService) AssignReturnEngineer(adminUserID uuid.UUID, dropID, e
 	}
 
 	now := time.Now()
-	drop.ReturnEngineerID = &engineerID
-	drop.Status = models.AssetDropStatusReturnAssigned
-	drop.ReturnAssignedAt = &now
-	drop.UpdatedAt = now
-	if err := s.dropRepo.Update(drop); err != nil {
+	prevEngineer := drop.ReturnEngineerID
+	engineerChanged := prevEngineer == nil || *prevEngineer != engineerID
+
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		dropRepo := repository.NewAssetDropRepository(tx)
+		ticketRepo := repository.NewTicketRepository(tx)
+
+		drop.ReturnEngineerID = &engineerID
+		drop.Status = models.AssetDropStatusReturnAssigned
+		drop.ReturnAssignedAt = &now
+		drop.UpdatedAt = now
+		if err := dropRepo.Update(drop); err != nil {
+			return err
+		}
+
+		if drop.AssetID != nil {
+			assetRepo := repository.NewAssetRepository(tx)
+			asset, aerr := assetRepo.GetByID(*drop.AssetID)
+			if aerr != nil {
+				return errors.New("linked asset not found")
+			}
+			oldStatus := asset.Status
+			if models.NormalizeAssetStatus(oldStatus) != models.AssetStatusReadyToReturn {
+				asset.Status = models.AssetStatusReadyToReturn
+				asset.UpdatedAt = now
+				if err := assetRepo.Update(asset); err != nil {
+					return err
+				}
+				ticketID := drop.TicketID
+				_ = assetRepo.CreateStatusHistory(&models.AssetStatusHistory{
+					AssetID:   asset.ID,
+					OldStatus: oldStatus,
+					NewStatus: models.AssetStatusReadyToReturn,
+					TicketID:  &ticketID,
+					ChangedBy: adminUserID,
+					ChangedAt: now,
+				})
+			}
+		}
+
+		return ticketRepo.CreateEventTx(tx, &models.TicketEvent{
+			TicketID:     drop.TicketID,
+			EventType:    models.TicketEventReturnAssigned,
+			ActorUserID:  adminUserID,
+			ToEngineerID: uuidPtr(engineerID),
+			Note:         "Ready to return — delivery assigned for " + drop.SerialNumber,
+			CreatedAt:    now,
+		})
+	})
+	if err != nil {
 		return nil, err
 	}
 
-	if s.notificationService != nil {
+	if engineerChanged && s.notificationService != nil {
 		go s.notificationService.NotifyAssetDropReturnAssigned(drop.TicketID, drop.ID, engineerID, drop.SerialNumber)
 	}
 
-	_ = adminUserID
 	return s.dropRepo.GetByID(drop.ID)
 }
 
-func (s *AssetDropService) SendToSite(adminUserID uuid.UUID, dropID uuid.UUID) (*models.TicketAssetDrop, error) {
+func (s *AssetDropService) completeReturn(
+	actorUserID uuid.UUID,
+	dropID uuid.UUID,
+	note string,
+	eventType models.TicketEventType,
+) (*models.TicketAssetDrop, error) {
 	drop, err := s.dropRepo.GetByID(dropID)
 	if err != nil {
 		return nil, errors.New("asset drop not found")
-	}
-	// Allow resume if already returned but ticket still Halted (stuck state).
-	if drop.Status != models.AssetDropStatusReturnAssigned &&
-		drop.Status != models.AssetDropStatusReturned {
-		return nil, errors.New("assign a return engineer before returning to site")
-	}
-	if drop.Status == models.AssetDropStatusReturnAssigned && drop.ReturnEngineerID == nil {
-		return nil, errors.New("assign a return engineer before returning to site")
 	}
 	if drop.AssetID == nil {
 		return nil, errors.New("asset drop has no linked asset")
@@ -472,7 +517,7 @@ func (s *AssetDropService) SendToSite(adminUserID uuid.UUID, dropID uuid.UUID) (
 				OldStatus: oldAssetStatus,
 				NewStatus: models.AssetStatusReturnedToSite,
 				TicketID:  &ticketID,
-				ChangedBy: adminUserID,
+				ChangedBy: actorUserID,
 				ChangedAt: now,
 			})
 		}
@@ -480,8 +525,9 @@ func (s *AssetDropService) SendToSite(adminUserID uuid.UUID, dropID uuid.UUID) (
 		if err := s.resumeHaltedTicket(
 			tx,
 			ticket,
-			adminUserID,
-			"Asset sent to site: "+drop.SerialNumber,
+			actorUserID,
+			note,
+			eventType,
 			now,
 		); err != nil {
 			return err
@@ -506,35 +552,85 @@ func (s *AssetDropService) SendToSite(adminUserID uuid.UUID, dropID uuid.UUID) (
 	return s.dropRepo.GetByID(drop.ID)
 }
 
-// CompleteReturnForAsset resumes a halted ticket when workshop marks the device
-// Returned to Site (same outcome as Send to site).
-func (s *AssetDropService) CompleteReturnForAsset(adminUserID, assetID uuid.UUID) (*models.TicketAssetDrop, error) {
+// ConfirmDelivered is called by the assigned return engineer after they
+// take the product back to the customer site.
+func (s *AssetDropService) ConfirmDelivered(supportUserID uuid.UUID, dropID uuid.UUID) (*models.TicketAssetDrop, error) {
+	drop, err := s.dropRepo.GetByID(dropID)
+	if err != nil {
+		return nil, errors.New("asset drop not found")
+	}
+	if drop.Status != models.AssetDropStatusReturnAssigned {
+		return nil, fmt.Errorf("product is not in ready-to-return (current: %s)", drop.Status)
+	}
+	if drop.ReturnEngineerID == nil {
+		return nil, errors.New("no support engineer is assigned to deliver this product")
+	}
+
+	engineer, err := s.supportEngineerRepo.GetByUserID(supportUserID)
+	if err != nil {
+		return nil, errors.New("support engineer profile not found")
+	}
+	if *drop.ReturnEngineerID != engineer.ID {
+		return nil, errors.New("you are not assigned to deliver this product")
+	}
+
+	return s.completeReturn(
+		supportUserID,
+		drop.ID,
+		"Product delivered: "+drop.SerialNumber,
+		models.TicketEventDelivered,
+	)
+}
+
+// SendToSite is admin-only resume when the product was already delivered
+// but the ticket is still Halted.
+func (s *AssetDropService) SendToSite(adminUserID uuid.UUID, dropID uuid.UUID) (*models.TicketAssetDrop, error) {
+	drop, err := s.dropRepo.GetByID(dropID)
+	if err != nil {
+		return nil, errors.New("asset drop not found")
+	}
+	if drop.Status == models.AssetDropStatusReturnAssigned {
+		return nil, errors.New("the assigned support engineer must confirm the product is delivered")
+	}
+	if drop.Status != models.AssetDropStatusReturned {
+		return nil, errors.New("mark ready to return and wait for the engineer to confirm delivery")
+	}
+	return s.completeReturn(
+		adminUserID,
+		drop.ID,
+		"Ticket resumed after product delivery: "+drop.SerialNumber,
+		models.TicketEventResumed,
+	)
+}
+
+// HandleWorkshopStatusChange is invoked when admin changes material status.
+// handled=true means this drop owned the transition (do not update status again).
+func (s *AssetDropService) HandleWorkshopStatusChange(
+	adminID, assetID uuid.UUID,
+	status models.AssetStatus,
+	returnEngineerID *uuid.UUID,
+) (bool, error) {
 	drop, err := s.dropRepo.GetActiveByAssetID(assetID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			// Maybe drop already marked returned but ticket still Halted.
-			latest, lerr := s.dropRepo.GetLatestByAssetID(assetID)
-			if lerr != nil {
-				return nil, nil
-			}
-			ticket, terr := s.ticketRepo.GetByID(latest.TicketID)
-			if terr != nil || ticket.Status != models.StatusHalted {
-				return nil, nil
-			}
-			return s.SendToSite(adminUserID, latest.ID)
+			return false, nil
 		}
-		return nil, err
+		return false, err
 	}
-
-	// Workshop "Returned to Site" must not bypass engineer selection.
-	// Admin must assign who will return to site first (ticket asset-drop panel).
 	if drop.Status == models.AssetDropStatusRequested {
-		return nil, nil // not yet in workshop
+		return false, errors.New("acknowledge the asset drop before changing workshop status")
 	}
 
-	if drop.Status == models.AssetDropStatusAcknowledged || drop.ReturnEngineerID == nil {
-		return nil, errors.New("assign a return engineer before returning to site")
+	switch models.NormalizeAssetStatus(status) {
+	case models.AssetStatusReadyToReturn:
+		if returnEngineerID == nil || *returnEngineerID == uuid.Nil {
+			return true, errors.New("select a support engineer who will deliver the product")
+		}
+		_, err := s.AssignReturnEngineer(adminID, drop.ID, *returnEngineerID)
+		return true, err
+	case models.AssetStatusReturnedToSite:
+		return true, errors.New("the assigned support engineer must confirm the product is delivered")
+	default:
+		return false, nil
 	}
-
-	return s.SendToSite(adminUserID, drop.ID)
 }

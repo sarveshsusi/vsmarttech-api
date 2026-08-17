@@ -143,10 +143,12 @@ const (
 	TicketEventAssigned   TicketEventType = "assigned"
 	TicketEventReassigned TicketEventType = "reassigned"
 	TicketEventStarted    TicketEventType = "started"
-	TicketEventHalted     TicketEventType = "halted"
-	TicketEventResumed    TicketEventType = "resumed"
-	TicketEventClosed     TicketEventType = "closed"
-	TicketEventReopened   TicketEventType = "reopened"
+	TicketEventHalted         TicketEventType = "halted"
+	TicketEventResumed        TicketEventType = "resumed"
+	TicketEventReturnAssigned TicketEventType = "return_assigned"
+	TicketEventDelivered      TicketEventType = "delivered"
+	TicketEventClosed         TicketEventType = "closed"
+	TicketEventReopened       TicketEventType = "reopened"
 )
 
 type TicketEvent struct {

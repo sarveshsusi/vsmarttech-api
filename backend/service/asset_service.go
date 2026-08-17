@@ -11,12 +11,20 @@ import (
 	"github.com/google/uuid"
 )
 
+// WorkshopStatusHook lets asset-drop own Ready-to-Return / delivery rules.
+// handled=true means the drop flow already persisted the asset status.
+type WorkshopStatusHook func(
+	adminID, assetID uuid.UUID,
+	status models.AssetStatus,
+	returnEngineerID *uuid.UUID,
+) (handled bool, err error)
+
 type AssetService struct {
 	repo                 *repository.AssetRepository
 	ticketRepo           *repository.TicketRepository
 	customerSolutionRepo *repository.CustomerSolutionRepository
 	companyRepo          repository.CompanyRepository
-	onReturnedToSite     func(adminID, assetID uuid.UUID) error
+	onWorkshopStatus     WorkshopStatusHook
 }
 
 func NewAssetService(
@@ -33,10 +41,9 @@ func NewAssetService(
 	}
 }
 
-// SetOnReturnedToSite registers a hook (asset-drop resume) after material status
-// becomes Returned to Site.
-func (s *AssetService) SetOnReturnedToSite(fn func(adminID, assetID uuid.UUID) error) {
-	s.onReturnedToSite = fn
+// SetOnWorkshopStatus registers the asset-drop workshop transition hook.
+func (s *AssetService) SetOnWorkshopStatus(fn WorkshopStatusHook) {
+	s.onWorkshopStatus = fn
 }
 
 type AssetInput struct {
@@ -220,16 +227,23 @@ func (s *AssetService) Update(id uuid.UUID, adminID uuid.UUID, in AssetInput) (*
 	}
 	if models.NormalizeAssetStatus(oldStatus) != models.NormalizeAssetStatus(asset.Status) {
 		s.recordStatusChange(id, oldStatus, asset.Status, adminID, s.linkedTicketIDPtr(id))
-		if models.NormalizeAssetStatus(asset.Status) == models.AssetStatusReturnedToSite && s.onReturnedToSite != nil {
-			if err := s.onReturnedToSite(adminID, id); err != nil {
-				return nil, err
+		if s.onWorkshopStatus != nil {
+			handled, hookErr := s.onWorkshopStatus(adminID, id, models.NormalizeAssetStatus(asset.Status), nil)
+			if hookErr != nil {
+				return nil, hookErr
 			}
+			_ = handled
 		}
 	}
 	return s.repo.GetByID(id)
 }
 
-func (s *AssetService) UpdateStatus(id uuid.UUID, status models.AssetStatus, adminID uuid.UUID) (*models.Asset, error) {
+func (s *AssetService) UpdateStatus(
+	id uuid.UUID,
+	status models.AssetStatus,
+	adminID uuid.UUID,
+	returnEngineerID *uuid.UUID,
+) (*models.Asset, error) {
 	if !models.IsValidAssetStatus(status) {
 		return nil, errors.New("invalid asset status")
 	}
@@ -239,6 +253,17 @@ func (s *AssetService) UpdateStatus(id uuid.UUID, status models.AssetStatus, adm
 	}
 	oldStatus := asset.Status
 	newStatus := models.NormalizeAssetStatus(status)
+
+	if s.onWorkshopStatus != nil {
+		handled, hookErr := s.onWorkshopStatus(adminID, id, newStatus, returnEngineerID)
+		if hookErr != nil {
+			return nil, hookErr
+		}
+		if handled {
+			return s.repo.GetByID(id)
+		}
+	}
+
 	if models.NormalizeAssetStatus(oldStatus) == newStatus {
 		return s.repo.GetByID(id)
 	}
@@ -248,12 +273,6 @@ func (s *AssetService) UpdateStatus(id uuid.UUID, status models.AssetStatus, adm
 		return nil, err
 	}
 	s.recordStatusChange(id, oldStatus, newStatus, adminID, s.linkedTicketIDPtr(id))
-
-	if newStatus == models.AssetStatusReturnedToSite && s.onReturnedToSite != nil {
-		if err := s.onReturnedToSite(adminID, id); err != nil {
-			return nil, err
-		}
-	}
 
 	return s.repo.GetByID(id)
 }
