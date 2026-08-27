@@ -7,7 +7,7 @@ This repo hosts the **Go API**, **background workers**, **PostgreSQL** (via Dock
 | Item | Value |
 |---|---|
 | Module path | `rbac` |
-| Go version | `1.25.12` |
+| Go version | `1.25.13` |
 | Primary branch (deploy) | `master` |
 | Docs / mirror branch | `main` |
 | Public API (Compose) | `http://localhost:8081` via Nginx |
@@ -132,7 +132,7 @@ OpenAPI stub: [`backend/openapi.yaml`](./backend/openapi.yaml)
 
 ### Prerequisites
 
-- Go **1.25.12+**
+- Go **1.25.13+**
 - Docker + Docker Compose (optional but recommended)
 - PostgreSQL (Compose provides one)
 
