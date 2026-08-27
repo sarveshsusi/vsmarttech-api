@@ -850,16 +850,25 @@ func generateOTP() (string, error) {
    Admin: Get Users (Paginated)
 ===================== */
 
-func (s *AuthService) GetUsersPaginated(page int) ([]*GetuserInfo, int64, error) {
-	const pageSize = 3
-
+func (s *AuthService) GetUsersPaginated(
+	page int,
+	pageSize int,
+	role string,
+	isActive *bool,
+) ([]*GetuserInfo, int64, error) {
 	if page < 1 {
 		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 5
+	}
+	if pageSize > 100 {
+		pageSize = 100
 	}
 
 	offset := (page - 1) * pageSize
 
-	users, total, err := s.repo.GetUsersPaginated(pageSize, offset)
+	users, total, err := s.repo.GetUsersPaginated(pageSize, offset, role, isActive)
 	if err != nil {
 		return nil, 0, err
 	}

@@ -273,26 +273,34 @@ func (r *AuthRepository) UpdateLastLogin(
    Admin: Get Users (Paginated)
 ===================== */
 
+func applyUserListFilters(q *gorm.DB, role string, isActive *bool) *gorm.DB {
+	if role != "" {
+		q = q.Where("role = ?", role)
+	}
+	if isActive != nil {
+		q = q.Where("is_active = ?", *isActive)
+	}
+	return q
+}
+
 func (r *AuthRepository) GetUsersPaginated(
 	limit int,
 	offset int,
+	role string,
+	isActive *bool,
 ) ([]models.User, int64, error) {
 
 	var users []models.User
 	var total int64
 
-	// Count total users (including inactive)
-	if err := r.db.
-		Model(&models.User{}).
+	if err := applyUserListFilters(r.db.Model(&models.User{}), role, isActive).
 		Count(&total).
 		Error; err != nil {
 		return nil, 0, err
 	}
 
-	// Fetch paginated users (all users, regardless of status)
-	query := r.db
-
-	if err := query.Order("created_at DESC").
+	if err := applyUserListFilters(r.db.Model(&models.User{}), role, isActive).
+		Order("created_at DESC").
 		Limit(limit).
 		Offset(offset).
 		Find(&users).

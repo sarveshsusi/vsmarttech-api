@@ -571,15 +571,15 @@ func (h *AuthHandler) Verify2FA(c *gin.Context) {
 // Admin: Get Users (Paginated)
 // Admin: Get Users (Paginated)
 func (h *AuthHandler) GetAllUsers(c *gin.Context) {
-	role := c.Query("role")
-	if role != "" {
-		// If role is provided (e.g. for dropdowns), return all users of that role (no pagination for now)
+	role := strings.TrimSpace(c.Query("role"))
+	// Legacy dropdowns: ?role=support with no page params returns the full list.
+	if role != "" && c.Query("page") == "" && c.Query("page_size") == "" {
 		users, err := h.service.GetUsersByRole(models.Role(role))
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch users"})
 			return
 		}
-		c.JSON(http.StatusOK, users) // Returns ARRAY directly
+		c.JSON(http.StatusOK, users)
 		return
 	}
 
@@ -590,7 +590,24 @@ func (h *AuthHandler) GetAllUsers(c *gin.Context) {
 		}
 	}
 
-	users, total, err := h.service.GetUsersPaginated(page)
+	pageSize := 5
+	if ps := c.Query("page_size"); ps != "" {
+		if parsed, err := strconv.Atoi(ps); err == nil {
+			pageSize = parsed
+		}
+	}
+
+	var isActive *bool
+	switch strings.ToLower(strings.TrimSpace(c.Query("status"))) {
+	case "active":
+		v := true
+		isActive = &v
+	case "inactive":
+		v := false
+		isActive = &v
+	}
+
+	users, total, err := h.service.GetUsersPaginated(page, pageSize, role, isActive)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "failed to fetch users",
@@ -598,9 +615,16 @@ func (h *AuthHandler) GetAllUsers(c *gin.Context) {
 		return
 	}
 
+	if pageSize < 1 {
+		pageSize = 5
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"page":      page,
-		"page_size": 3,
+		"page_size": pageSize,
 		"total":     total,
 		"users":     users,
 	})
