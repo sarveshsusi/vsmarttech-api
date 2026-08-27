@@ -2,11 +2,11 @@ package handler
 
 import (
 	"net/http"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"rbac/models"
 	"rbac/service"
 )
 
@@ -58,20 +58,17 @@ func (h *CustomerHandler) Create(c *gin.Context) {
 }
 
 func (h *CustomerHandler) GetAll(c *gin.Context) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-
-	customers, total, err := h.service.GetAllCustomers(page)
+	customers, err := h.service.GetAllCustomers()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed"})
 		return
 	}
+	if customers == nil {
+		customers = []models.Customer{}
+	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"data": customers,
-		"meta": gin.H{
-			"page":  page,
-			"limit": 3,
-			"total": total,
-		},
+		"data":  customers,
+		"total": len(customers),
 	})
 }

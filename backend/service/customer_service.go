@@ -123,17 +123,8 @@ func (s *CustomerService) CreateCustomer(
 // =========================
 // ADMIN: GET ALL CUSTOMERS
 // =========================
-func (s *CustomerService) GetAllCustomers(
-	page int,
-) ([]models.Customer, int64, error) {
-
-	const limit = 3
-
-	if page <= 0 {
-		page = 1
-	}
-
-	return s.customerRepo.GetAllPaginated(page, limit)
+func (s *CustomerService) GetAllCustomers() ([]models.Customer, error) {
+	return s.customerRepo.GetAll()
 }
 
 // =========================

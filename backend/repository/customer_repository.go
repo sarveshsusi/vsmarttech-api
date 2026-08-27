@@ -44,6 +44,15 @@ func (r *CustomerRepository) FindByUserID(
 	return &customer, nil
 }
 
+func (r *CustomerRepository) GetAll() ([]models.Customer, error) {
+	var customers []models.Customer
+	err := r.db.
+		Preload("Company").
+		Order("created_at DESC").
+		Find(&customers).Error
+	return customers, err
+}
+
 func (r *CustomerRepository) GetAllPaginated(
 	page int,
 	limit int,
@@ -51,6 +60,13 @@ func (r *CustomerRepository) GetAllPaginated(
 
 	var customers []models.Customer
 	var total int64
+
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 {
+		limit = 50
+	}
 
 	offset := (page - 1) * limit
 
