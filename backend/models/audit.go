@@ -14,7 +14,7 @@ type AuditLog struct {
 	PerformedBy uuid.UUID `gorm:"type:uuid" json:"performed_by"`
 	IP          string    `json:"ip"`
 	UserAgent   string    `json:"user_agent"`
-	CreatedAt   time.Time `json:"created_at"`
+	CreatedAt   time.Time `gorm:"index:idx_audit_logs_created_at" json:"created_at"`
 }
 
 func (AuditLog) TableName() string {

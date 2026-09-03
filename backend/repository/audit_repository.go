@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"time"
+
 	"rbac/models"
 
 	"github.com/google/uuid"
@@ -30,11 +32,11 @@ func (r *AuditRepository) Log(
 
 	return r.db.Create(&models.AuditLog{
 		Entity:      entity,
-		EntityID:   entityID,
-		Action:     action,
+		EntityID:    entityID,
+		Action:      action,
 		PerformedBy: performedBy,
-		IP:         ip,
-		UserAgent:  userAgent,
+		IP:          ip,
+		UserAgent:   userAgent,
 	}).Error
 }
 
@@ -88,4 +90,41 @@ func (r *AuditRepository) List(filter AuditListFilter) ([]models.AuditLog, int64
 	var rows []models.AuditLog
 	err := q.Order("created_at DESC").Limit(limit).Offset(offset).Find(&rows).Error
 	return rows, total, err
+}
+
+const auditDeleteBatchSize = 5000
+
+// DeleteOlderThan removes audit rows created before cutoff in batches so a
+// large table does not lock for one giant DELETE.
+func (r *AuditRepository) DeleteOlderThan(cutoff time.Time) (int64, error) {
+	var total int64
+	for {
+		res := r.db.Exec(`
+			DELETE FROM audit_logs
+			WHERE id IN (
+				SELECT id FROM audit_logs
+				WHERE created_at < ?
+				LIMIT ?
+			)
+		`, cutoff, auditDeleteBatchSize)
+		if res.Error != nil {
+			return total, res.Error
+		}
+		total += res.RowsAffected
+		if res.RowsAffected == 0 {
+			break
+		}
+	}
+	return total, nil
+}
+
+// VacuumAuditLogs reclaims dead tuple space after a large delete. VACUUM
+// cannot run inside a transaction, so this uses the raw sql.DB.
+func (r *AuditRepository) VacuumAuditLogs() error {
+	sqlDB, err := r.db.DB()
+	if err != nil {
+		return err
+	}
+	_, err = sqlDB.Exec("VACUUM audit_logs")
+	return err
 }

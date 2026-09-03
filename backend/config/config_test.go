@@ -51,4 +51,7 @@ func TestLoadConfigDevelopmentDefaults(t *testing.T) {
 	if cfg.Server.RateLimitMax != 300 {
 		t.Fatalf("expected RateLimitMax 300, got %d", cfg.Server.RateLimitMax)
 	}
+	if cfg.Server.AuditLogRetentionDays != 30 {
+		t.Fatalf("expected AuditLogRetentionDays 30, got %d", cfg.Server.AuditLogRetentionDays)
+	}
 }

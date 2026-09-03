@@ -10,6 +10,7 @@ import (
 
 	"rbac/internal/bootstrap"
 	"rbac/jobs"
+	"rbac/repository"
 )
 
 func main() {
@@ -29,12 +30,19 @@ func main() {
 
 	cron := jobs.NewContractExpiryCron(app.ContractExpiryService)
 	cron.Start()
-	log.Println("worker-contracts running (daily contract expiry checks)")
+
+	auditCron := jobs.NewAuditLogCleanupCron(
+		repository.NewAuditRepository(app.DB),
+		app.Config.Server.AuditLogRetentionDays,
+	)
+	auditCron.Start()
+	log.Println("worker-contracts running (daily contract expiry + monthly audit log cleanup)")
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	<-sig
 
 	cron.Stop()
+	auditCron.Stop()
 	log.Println("worker-contracts stopped")
 }

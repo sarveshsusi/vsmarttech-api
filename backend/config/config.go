@@ -37,12 +37,13 @@ type StudioConfig struct {
 }
 
 type ServerConfig struct {
-	Port              string
-	Env               string
-	RateLimitMax      int // Max requests per minute
-	TrustedProxies    []string
-	RunInProcessCrons bool   // When false, SLA/contract crons run in worker containers
-	CookieSameSite    string // none | lax | strict — use none for cross-origin SPA (Vercel ↔ API)
+	Port                  string
+	Env                   string
+	RateLimitMax          int // Max requests per minute
+	TrustedProxies        []string
+	RunInProcessCrons     bool   // When false, SLA/contract crons run in worker containers
+	CookieSameSite        string // none | lax | strict — use none for cross-origin SPA (Vercel ↔ API)
+	AuditLogRetentionDays int    // Days of HTTP audit rows to keep; monthly cron deletes older. Default 30.
 }
 
 type DatabaseConfig struct {
@@ -195,14 +196,21 @@ func LoadConfig() *Config {
 		log.Fatalf("MIGRATE_MODE must be auto or goose (got %q)", migrateMode)
 	}
 
+	auditLogRetentionDays := getEnvAsInt("AUDIT_LOG_RETENTION_DAYS", 30)
+	if auditLogRetentionDays < 1 {
+		log.Printf("AUDIT_LOG_RETENTION_DAYS=%d is invalid; using 30", auditLogRetentionDays)
+		auditLogRetentionDays = 30
+	}
+
 	return &Config{
 		Server: ServerConfig{
-			Port:              getEnv("SERVER_PORT", "8080"),
-			Env:               env,
-			RateLimitMax:      getEnvAsInt("RATE_LIMIT_MAX", 300),
-			TrustedProxies:    getEnvCSV("TRUSTED_PROXIES", []string{"nginx", "172.16.0.0/12", "10.0.0.0/8"}),
-			RunInProcessCrons: getEnvAsBool("RUN_INPROCESS_CRONS", true),
-			CookieSameSite:    cookieSameSite,
+			Port:                  getEnv("SERVER_PORT", "8080"),
+			Env:                   env,
+			RateLimitMax:          getEnvAsInt("RATE_LIMIT_MAX", 300),
+			TrustedProxies:        getEnvCSV("TRUSTED_PROXIES", []string{"nginx", "172.16.0.0/12", "10.0.0.0/8"}),
+			RunInProcessCrons:     getEnvAsBool("RUN_INPROCESS_CRONS", true),
+			CookieSameSite:        cookieSameSite,
+			AuditLogRetentionDays: auditLogRetentionDays,
 		},
 		Database: DatabaseConfig{
 			URL:          dbURL,

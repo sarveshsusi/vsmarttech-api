@@ -241,5 +241,10 @@ func StartInProcessCrons(app *App) {
 		jobs.NewAMCVisitOverdueCron(amcSvc).Start()
 		log.Println("AMC visit overdue cron started in-process (minimal)")
 	}
+	jobs.NewAuditLogCleanupCron(
+		repository.NewAuditRepository(app.DB),
+		app.Config.Server.AuditLogRetentionDays,
+	).Start()
+	log.Println("audit log cleanup cron started in-process")
 	log.Println("contract expiry cron started in-process")
 }

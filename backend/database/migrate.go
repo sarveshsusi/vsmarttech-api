@@ -36,6 +36,9 @@ func Migrate(db *gorm.DB, mode string) {
 	default: // auto
 		// GORM cannot ADD ... NOT NULL over existing rows; backfill first.
 		ensureRefreshTokenFamilyIDColumn(db)
+		// One-time purge of historical audit rows (must run before AutoMigrate
+		// creates idx_audit_logs_created_at, which is the sentinel).
+		purgeHistoricalAuditLogs(db)
 		autoMigrate(db)
 		backfillRefreshTokenFamilyIDs(db)
 		backfillTicketFeedbackLifecycle(db)
@@ -211,6 +214,34 @@ func autoMigrate(db *gorm.DB) {
 	if err != nil {
 		log.Fatalf("Database AutoMigrate failed: %v", err)
 	}
+}
+
+// purgeHistoricalAuditLogs truncates audit_logs once so existing rows stop
+// consuming disk. The created_at index is the sentinel: production goose
+// migration 00008 creates the same index after TRUNCATE.
+func purgeHistoricalAuditLogs(db *gorm.DB) {
+	if !db.Migrator().HasTable("audit_logs") {
+		return
+	}
+	var indexed bool
+	if err := db.Raw(`
+		SELECT EXISTS (
+			SELECT 1 FROM pg_indexes
+			WHERE tablename = 'audit_logs'
+			  AND indexname = 'idx_audit_logs_created_at'
+		)
+	`).Scan(&indexed).Error; err != nil {
+		log.Printf("warning: audit_logs index check: %v", err)
+		return
+	}
+	if indexed {
+		return
+	}
+	if err := db.Exec(`TRUNCATE TABLE audit_logs`).Error; err != nil {
+		log.Printf("warning: truncate audit_logs: %v", err)
+		return
+	}
+	log.Println("truncated audit_logs (one-time historical purge)")
 }
 
 func backfillRefreshTokenFamilyIDs(db *gorm.DB) {
