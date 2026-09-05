@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/jpeg"
 	"image/png"
+	"io"
 	"log"
 	"mime/multipart"
 	"path/filepath"
@@ -124,6 +125,50 @@ func (u *S3Uploader) UploadValidated(fileBytes []byte, contentType string) (stri
 
 	log.Printf("[S3_UPLOAD_SUCCESS] Key: %s, Location: %s", s3Key, result.Location)
 	return result.Location, nil
+}
+
+const maxStoredObjectBytes = 2 << 20
+
+// OpenStored downloads a previously uploaded object from this bucket.
+func (u *S3Uploader) OpenStored(storedURL string) ([]byte, string, error) {
+	bucket, key, ok := ParseS3ObjectRef(storedURL, u.bucket)
+	if !ok {
+		return nil, "", fmt.Errorf("not an s3 object url")
+	}
+	if u.bucket != "" && bucket != u.bucket {
+		return nil, "", fmt.Errorf("unexpected s3 bucket")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	out, err := u.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get s3 object: %w", err)
+	}
+	defer out.Body.Close()
+
+	data, err := io.ReadAll(io.LimitReader(out.Body, maxStoredObjectBytes+1))
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to read s3 object: %w", err)
+	}
+	if len(data) > maxStoredObjectBytes {
+		return nil, "", fmt.Errorf("s3 object too large")
+	}
+
+	contentType := "application/octet-stream"
+	if out.ContentType != nil && *out.ContentType != "" {
+		contentType = *out.ContentType
+	}
+	if contentType == "application/octet-stream" {
+		if detected, err := DetectImageContentType(data); err == nil {
+			contentType = detected
+		}
+	}
+	return data, contentType, nil
 }
 
 // compressImage compresses an image to reduce file size

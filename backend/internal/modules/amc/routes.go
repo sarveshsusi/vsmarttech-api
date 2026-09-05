@@ -25,6 +25,7 @@ func RegisterAdmin(admin *gin.RouterGroup, h Handlers) {
 	admin.PUT("/amc-assignments/:id", h.AMC.UpdateAMCAssignment)
 	admin.DELETE("/amc-assignments/:id", h.AMC.DeleteAMCAssignment)
 	admin.GET("/amc-assignments/:id/proofs", h.AMC.GetVisitProofs)
+	admin.GET("/amc-proofs/:id/image", h.AMC.ServeProofImage)
 	admin.PUT("/amc-visits/:visit_id/reschedule", h.AMC.RescheduleVisit)
 }
 
@@ -35,4 +36,5 @@ func RegisterSupport(support *gin.RouterGroup, h Handlers) {
 	support.PUT("/amc-visits/:visit_id/complete", h.AMC.CompleteVisit)
 	support.POST("/amc-visits/:visit_id/proofs", h.AMC.UploadProof)
 	support.GET("/amc-visits/:visit_id/proofs", h.AMC.GetVisitProofs)
+	support.GET("/amc-proofs/:id/image", h.AMC.ServeProofImage)
 }

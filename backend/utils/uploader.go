@@ -16,6 +16,9 @@ type ImageUploader interface {
 	// UploadValidated uploads already-sniffed image bytes with a server-chosen content type/name
 	UploadValidated(data []byte, contentType string) (string, error)
 
+	// OpenStored reads bytes for a previously stored proof URL/key (S3 or local).
+	OpenStored(storedURL string) (data []byte, contentType string, err error)
+
 	// GenerateAuthToken is deprecated (was for ImageKit)
 	GenerateAuthToken() (*AuthTokenResponse, error)
 }

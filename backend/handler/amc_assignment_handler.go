@@ -265,6 +265,49 @@ func (h *AMCAssignmentHandler) GetVisitProofs(c *gin.Context) {
 
 /*
 	=========================
+	  AUTHENTICATED PROOF IMAGE
+=========================
+*/
+func (h *AMCAssignmentHandler) ServeProofImage(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid proof ID"})
+		return
+	}
+
+	proof, err := h.service.GetProof(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Proof not found"})
+		return
+	}
+
+	if h.uploader == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Proof storage is unavailable"})
+		return
+	}
+
+	data, contentType, err := h.uploader.OpenStored(proof.ImagePath)
+	if err != nil {
+		log.Printf("[AMC_PROOF_IMAGE] proof_id=%s err=%v", id, err)
+		if strings.HasPrefix(proof.ImagePath, "https://") {
+			if _, _, isS3 := utils.ParseS3ObjectRef(proof.ImagePath, ""); !isS3 {
+				c.Redirect(http.StatusFound, proof.ImagePath)
+				return
+			}
+		}
+		c.JSON(http.StatusNotFound, gin.H{"error": "Proof image not available"})
+		return
+	}
+
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	c.Header("Cache-Control", "private, max-age=300")
+	c.Data(http.StatusOK, contentType, data)
+}
+
+/*
+	=========================
 	  ADMIN: RESCHEDULE VISIT
 =========================
 */

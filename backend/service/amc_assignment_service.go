@@ -203,6 +203,10 @@ func (s *AMCAssignmentService) GetVisitProofs(visitID uuid.UUID) ([]models.AMCVi
 	return s.repo.GetProofs(visitID)
 }
 
+func (s *AMCAssignmentService) GetProof(id uuid.UUID) (*models.AMCVisitProof, error) {
+	return s.repo.GetProof(id)
+}
+
 /* =========================
    UPDATE AMC ASSIGNMENT
 ========================= */

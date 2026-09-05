@@ -252,6 +252,19 @@ func (r *AMCAssignmentRepository) AddProof(proof *models.AMCVisitProof) error {
 	return r.db.Create(proof).Error
 }
 
+// GetProof retrieves a single proof by ID
+func (r *AMCAssignmentRepository) GetProof(id uuid.UUID) (*models.AMCVisitProof, error) {
+	var proof models.AMCVisitProof
+	err := r.db.First(&proof, "id = ?", id).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("proof not found")
+		}
+		return nil, err
+	}
+	return &proof, nil
+}
+
 // GetProofs retrieves all proofs for a visit
 func (r *AMCAssignmentRepository) GetProofs(visitID uuid.UUID) ([]models.AMCVisitProof, error) {
 	var proofs []models.AMCVisitProof
