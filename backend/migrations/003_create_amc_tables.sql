@@ -7,7 +7,7 @@ CREATE TABLE amc_assignments (
     assigned_at TIMESTAMP NOT NULL,
     amc_start_date TIMESTAMP NOT NULL,
     amc_end_date TIMESTAMP NOT NULL,
-    status VARCHAR(50) DEFAULT 'active', -- active, completed, expired
+    status VARCHAR(50) DEFAULT 'active', -- active, completed, expired, closed
     notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP

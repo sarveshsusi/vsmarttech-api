@@ -173,7 +173,7 @@ func wireHTTP(
 	supportEngineerHandler := handler.NewSupportEngineerHandler(supportEngineerService, supportService, assetDropService)
 	notificationHandler := handler.NewNotificationHandler(notificationService)
 	contractHandler := handler.NewContractHandler(app.ContractExpiryService)
-	amcHandler := handler.NewAMCAssignmentHandler(amcService, imageUploader, supportEngineerRepo)
+	amcHandler := handler.NewAMCAssignmentHandler(amcService, imageUploader, supportEngineerRepo, customerRepo)
 	auditHandler := handler.NewAuditHandler(repository.NewAuditRepository(db))
 
 	r := gin.New()

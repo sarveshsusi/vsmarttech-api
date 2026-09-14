@@ -1,11 +1,13 @@
 package handler
 
 import (
+	"errors"
 	"log"
 	"net/http"
 	"strings"
 	"time"
 
+	"rbac/middleware"
 	"rbac/models"
 	"rbac/repository"
 	"rbac/service"
@@ -19,17 +21,20 @@ type AMCAssignmentHandler struct {
 	service             *service.AMCAssignmentService
 	uploader            utils.ImageUploader
 	supportEngineerRepo *repository.SupportEngineerRepository
+	customerRepo        *repository.CustomerRepository
 }
 
 func NewAMCAssignmentHandler(
 	service *service.AMCAssignmentService,
 	uploader utils.ImageUploader,
 	supportEngineerRepo *repository.SupportEngineerRepository,
+	customerRepo *repository.CustomerRepository,
 ) *AMCAssignmentHandler {
 	return &AMCAssignmentHandler{
 		service:             service,
 		uploader:            uploader,
 		supportEngineerRepo: supportEngineerRepo,
+		customerRepo:        customerRepo,
 	}
 }
 
@@ -112,7 +117,70 @@ func (h *AMCAssignmentHandler) GetAMCAssignment(c *gin.Context) {
 		return
 	}
 
+	if !h.authorizeAssignmentAccess(c, assignment) {
+		return
+	}
+
 	c.JSON(http.StatusOK, assignment)
+}
+
+func (h *AMCAssignmentHandler) authorizeAssignmentAccess(c *gin.Context, assignment *models.AMCAssignment) bool {
+	roleValue, _ := c.Get(middleware.CtxUserRole)
+	role, _ := roleValue.(models.Role)
+	userID := c.MustGet("user_id").(uuid.UUID)
+
+	switch role {
+	case models.RoleAdmin:
+		return true
+	case models.RoleSupport:
+		engineer, err := h.supportEngineerRepo.GetByUserID(userID)
+		if err != nil || engineer.ID != assignment.SupportEngineerID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to view this AMC"})
+			return false
+		}
+		return true
+	case models.RoleCustomer:
+		if h.customerRepo == nil {
+			c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to view this AMC"})
+			return false
+		}
+		customer, err := h.customerRepo.GetByUserID(userID)
+		if err != nil || assignment.CustomerSolution == nil || assignment.CustomerSolution.CustomerID != customer.ID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to view this AMC"})
+			return false
+		}
+		return true
+	default:
+		c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to view this AMC"})
+		return false
+	}
+}
+
+/*
+	=========================
+	  CUSTOMER: GET MY AMC ASSIGNMENTS
+
+=========================
+*/
+func (h *AMCAssignmentHandler) GetMyCustomerAMCs(c *gin.Context) {
+	userID := c.MustGet("user_id").(uuid.UUID)
+	if h.customerRepo == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch AMCs"})
+		return
+	}
+	customer, err := h.customerRepo.GetByUserID(userID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Customer not found"})
+		return
+	}
+
+	amcs, err := h.service.GetCustomerAMCs(customer.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch AMCs"})
+		return
+	}
+
+	c.JSON(http.StatusOK, amcs)
 }
 
 /*
@@ -209,7 +277,7 @@ func (h *AMCAssignmentHandler) UploadProof(c *gin.Context) {
 	}
 
 	// Validate it's from AWS S3, local storage, or any HTTPS URL
-	if !strings.Contains(req.ImageURL, "s3") && !strings.Contains(req.ImageURL, "localhost") && !strings.HasPrefix(req.ImageURL, "https://") {
+	if !isValidProofImageURL(req.ImageURL) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid image URL"})
 		return
 	}
@@ -240,6 +308,104 @@ func (h *AMCAssignmentHandler) UploadProof(c *gin.Context) {
 	})
 }
 
+func isValidProofImageURL(imageURL string) bool {
+	return strings.Contains(imageURL, "s3") || strings.Contains(imageURL, "localhost") || strings.HasPrefix(imageURL, "https://")
+}
+
+func (h *AMCAssignmentHandler) requireEngineerID(c *gin.Context) (uuid.UUID, bool) {
+	userID := c.MustGet("user_id").(uuid.UUID)
+	engineer, err := h.supportEngineerRepo.GetByUserID(userID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Support engineer not found"})
+		return uuid.Nil, false
+	}
+	return engineer.ID, true
+}
+
+func writeProofMutationError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, service.ErrProofNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+	case errors.Is(err, service.ErrProofForbidden):
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	}
+}
+
+/*
+	=========================
+	  ENGINEER: UPDATE PROOF
+
+=========================
+*/
+func (h *AMCAssignmentHandler) UpdateProof(c *gin.Context) {
+	proofID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid proof ID"})
+		return
+	}
+
+	engineerID, ok := h.requireEngineerID(c)
+	if !ok {
+		return
+	}
+
+	var req struct {
+		ImageURL    *string `json:"image_url"`
+		Description *string `json:"description"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+	if req.ImageURL == nil && req.Description == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no updates provided"})
+		return
+	}
+	if req.ImageURL != nil && !isValidProofImageURL(*req.ImageURL) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid image URL"})
+		return
+	}
+
+	proof, err := h.service.UpdateVisitProof(proofID, engineerID, req.ImageURL, req.Description)
+	if err != nil {
+		writeProofMutationError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Proof updated successfully",
+		"proof":   proof,
+	})
+}
+
+/*
+	=========================
+	  ENGINEER: DELETE PROOF
+
+=========================
+*/
+func (h *AMCAssignmentHandler) DeleteProof(c *gin.Context) {
+	proofID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid proof ID"})
+		return
+	}
+
+	engineerID, ok := h.requireEngineerID(c)
+	if !ok {
+		return
+	}
+
+	if err := h.service.DeleteVisitProof(proofID, engineerID); err != nil {
+		writeProofMutationError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Proof deleted successfully"})
+}
+
 /*
 	=========================
 	  GET VISIT PROOFS
@@ -266,6 +432,7 @@ func (h *AMCAssignmentHandler) GetVisitProofs(c *gin.Context) {
 /*
 	=========================
 	  AUTHENTICATED PROOF IMAGE
+
 =========================
 */
 func (h *AMCAssignmentHandler) ServeProofImage(c *gin.Context) {
@@ -309,6 +476,7 @@ func (h *AMCAssignmentHandler) ServeProofImage(c *gin.Context) {
 /*
 	=========================
 	  ADMIN: RESCHEDULE VISIT
+
 =========================
 */
 func (h *AMCAssignmentHandler) RescheduleVisit(c *gin.Context) {

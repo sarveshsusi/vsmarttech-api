@@ -17,7 +17,7 @@ type AMCAssignment struct {
 	AssignedAt            time.Time  `json:"assigned_at"`
 	AMCStartDate          time.Time  `json:"amc_start_date"`
 	AMCEndDate            time.Time  `json:"amc_end_date"`
-	Status                string     `json:"status"` // active, completed, expired
+	Status                string     `json:"status"` // active, completed, expired, closed
 	Notes                 string     `json:"notes"`
 	CreatedAt             time.Time  `json:"created_at"`
 	UpdatedAt             time.Time  `json:"updated_at"`

@@ -18,6 +18,20 @@ func NewAMCAssignmentRepository(db *gorm.DB) *AMCAssignmentRepository {
 	return &AMCAssignmentRepository{db: db}
 }
 
+func (r *AMCAssignmentRepository) detailQuery() *gorm.DB {
+	return r.db.
+		Preload("CustomerSolution").
+		Preload("CustomerSolution.Customer").
+		Preload("CustomerSolution.Customer.Company").
+		Preload("CustomerSolution.Solution").
+		Preload("SupportEngineer").
+		Preload("SupportEngineer.User").
+		Preload("Visits", func(db *gorm.DB) *gorm.DB {
+			return db.Order("quarter_start_date ASC")
+		}).
+		Preload("Visits.Proofs")
+}
+
 /* =========================
    AMC ASSIGNMENT METHODS
 ========================= */
@@ -34,13 +48,7 @@ func (r *AMCAssignmentRepository) Create(assignment *models.AMCAssignment) error
 // GetByID retrieves assignment details
 func (r *AMCAssignmentRepository) GetByID(id uuid.UUID) (*models.AMCAssignment, error) {
 	var assignment models.AMCAssignment
-	err := r.db.
-		Preload("CustomerSolution").
-		Preload("SupportEngineer").
-		Preload("Visits", func(db *gorm.DB) *gorm.DB {
-			return db.Order("quarter_start_date ASC")
-		}).
-		Preload("Visits.Proofs").
+	err := r.detailQuery().
 		Where("id = ?", id).
 		First(&assignment).Error
 
@@ -57,14 +65,7 @@ func (r *AMCAssignmentRepository) GetByID(id uuid.UUID) (*models.AMCAssignment, 
 // GetByEngineer retrieves all assignments for an engineer
 func (r *AMCAssignmentRepository) GetByEngineer(engineerID uuid.UUID) ([]models.AMCAssignment, error) {
 	var assignments []models.AMCAssignment
-	err := r.db.
-		Preload("CustomerSolution").
-		Preload("CustomerSolution.Customer").
-		Preload("CustomerSolution.Solution").
-		Preload("Visits", func(db *gorm.DB) *gorm.DB {
-			return db.Order("quarter_start_date ASC")
-		}).
-		Preload("Visits.Proofs").
+	err := r.detailQuery().
 		Where("support_engineer_id = ? AND status = ?", engineerID, "active").
 		Order("amc_start_date ASC").
 		Find(&assignments).Error
@@ -72,15 +73,22 @@ func (r *AMCAssignmentRepository) GetByEngineer(engineerID uuid.UUID) ([]models.
 	return assignments, err
 }
 
-// GetBySolution retrieves all assignments for a solution
+// GetByCustomer retrieves all assignments for a customer's AMC contracts.
+func (r *AMCAssignmentRepository) GetByCustomer(customerID uuid.UUID) ([]models.AMCAssignment, error) {
+	var assignments []models.AMCAssignment
+	err := r.detailQuery().
+		Joins("JOIN customer_solutions ON customer_solutions.id = amc_assignments.customer_solution_id").
+		Where("customer_solutions.customer_id = ?", customerID).
+		Order("amc_assignments.amc_start_date ASC").
+		Find(&assignments).Error
+
+	return assignments, err
+}
+
+// GetBySolution retrieves all assignments for a customer solution / PO.
 func (r *AMCAssignmentRepository) GetBySolution(solutionID uuid.UUID) ([]models.AMCAssignment, error) {
 	var assignments []models.AMCAssignment
-	err := r.db.
-		Preload("SupportEngineer").
-		Preload("Visits", func(db *gorm.DB) *gorm.DB {
-			return db.Order("quarter_start_date ASC")
-		}).
-		Preload("Visits.Proofs").
+	err := r.detailQuery().
 		Where("customer_solution_id = ?", solutionID).
 		Order("assigned_at DESC").
 		Find(&assignments).Error
@@ -88,20 +96,10 @@ func (r *AMCAssignmentRepository) GetBySolution(solutionID uuid.UUID) ([]models.
 	return assignments, err
 }
 
-// GetAll retrieves all active AMC assignments
+// GetAll retrieves all AMC assignments for the admin scheduler.
 func (r *AMCAssignmentRepository) GetAll() ([]models.AMCAssignment, error) {
 	var assignments []models.AMCAssignment
-	err := r.db.
-		Preload("CustomerSolution").
-		Preload("CustomerSolution.Customer").
-		Preload("CustomerSolution.Solution").
-		Preload("SupportEngineer").
-		Preload("SupportEngineer.User").
-		Preload("Visits", func(db *gorm.DB) *gorm.DB {
-			return db.Order("quarter_start_date ASC")
-		}).
-		Preload("Visits.Proofs").
-		Where("status = ?", "active").
+	err := r.detailQuery().
 		Order("assigned_at DESC").
 		Find(&assignments).Error
 
@@ -160,6 +158,7 @@ func (r *AMCAssignmentRepository) GetVisit(id uuid.UUID) (*models.AMCVisit, erro
 	var visit models.AMCVisit
 	err := r.db.
 		Preload("Proofs").
+		Preload("AMCAssignment").
 		Where("id = ?", id).
 		First(&visit).Error
 
@@ -270,6 +269,11 @@ func (r *AMCAssignmentRepository) GetProofs(visitID uuid.UUID) ([]models.AMCVisi
 	var proofs []models.AMCVisitProof
 	err := r.db.Where("amc_visit_id = ?", visitID).Find(&proofs).Error
 	return proofs, err
+}
+
+// UpdateProof updates proof fields such as image path or description.
+func (r *AMCAssignmentRepository) UpdateProof(id uuid.UUID, updates map[string]interface{}) error {
+	return r.db.Model(&models.AMCVisitProof{}).Where("id = ?", id).Updates(updates).Error
 }
 
 // DeleteProof removes proof image

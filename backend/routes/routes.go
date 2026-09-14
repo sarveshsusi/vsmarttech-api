@@ -131,6 +131,7 @@ func SetupRoutes(
 		{
 			modcrm.RegisterCustomer(customer, crmHandlers)
 			modtickets.RegisterCustomer(customer, ticketHandlers)
+			modamc.RegisterCustomer(customer, amcHandlers)
 		}
 	}
 }

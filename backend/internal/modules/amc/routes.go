@@ -36,5 +36,14 @@ func RegisterSupport(support *gin.RouterGroup, h Handlers) {
 	support.PUT("/amc-visits/:visit_id/complete", h.AMC.CompleteVisit)
 	support.POST("/amc-visits/:visit_id/proofs", h.AMC.UploadProof)
 	support.GET("/amc-visits/:visit_id/proofs", h.AMC.GetVisitProofs)
+	support.PUT("/amc-proofs/:id", h.AMC.UpdateProof)
+	support.DELETE("/amc-proofs/:id", h.AMC.DeleteProof)
 	support.GET("/amc-proofs/:id/image", h.AMC.ServeProofImage)
+}
+
+// RegisterCustomer mounts customer AMC assignment routes.
+func RegisterCustomer(customer *gin.RouterGroup, h Handlers) {
+	customer.GET("/amc-assignments", h.AMC.GetMyCustomerAMCs)
+	customer.GET("/amc-assignments/:id", h.AMC.GetAMCAssignment)
+	customer.GET("/amc-proofs/:id/image", h.AMC.ServeProofImage)
 }

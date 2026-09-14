@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -11,9 +12,9 @@ import (
 )
 
 type AMCAssignmentService struct {
-	repo                     *repository.AMCAssignmentRepository
-	notificationService      *NotificationService
-	customerSolutionRepo     *repository.CustomerSolutionRepository
+	repo                 *repository.AMCAssignmentRepository
+	notificationService  *NotificationService
+	customerSolutionRepo *repository.CustomerSolutionRepository
 }
 
 func NewAMCAssignmentService(
@@ -28,9 +29,12 @@ func NewAMCAssignmentService(
 	}
 }
 
-/* =========================
-   ASSIGN AMC TO ENGINEER
-========================= */
+/*
+	=========================
+	  ASSIGN AMC TO ENGINEER
+
+=========================
+*/
 func (s *AMCAssignmentService) AssignAMC(assignmentReq *models.AMCAssignment) error {
 	if assignmentReq.CustomerSolutionID == uuid.Nil || assignmentReq.SupportEngineerID == uuid.Nil {
 		return errors.New("customer solution and engineer are required")
@@ -61,9 +65,12 @@ func (s *AMCAssignmentService) AssignAMC(assignmentReq *models.AMCAssignment) er
 	return nil
 }
 
-/* =========================
-   GENERATE QUARTERLY VISITS
-========================= */
+/*
+	=========================
+	  GENERATE QUARTERLY VISITS
+
+=========================
+*/
 func (s *AMCAssignmentService) generateQuarterlyVisits(assignmentID uuid.UUID, startDate, endDate time.Time) error {
 	currentDate := startDate
 
@@ -99,9 +106,12 @@ func (s *AMCAssignmentService) generateQuarterlyVisits(assignmentID uuid.UUID, s
 	return nil
 }
 
-/* =========================
-   GET AMC DETAILS
-========================= */
+/*
+	=========================
+	  GET AMC DETAILS
+
+=========================
+*/
 func (s *AMCAssignmentService) GetAMCAssignment(id uuid.UUID) (*models.AMCAssignment, error) {
 	return s.repo.GetByID(id)
 }
@@ -114,17 +124,26 @@ func (s *AMCAssignmentService) GetAllAMCs() ([]models.AMCAssignment, error) {
 	return s.repo.GetAll()
 }
 
-/* =========================
-   COMPLETE VISIT
-========================= */
+func (s *AMCAssignmentService) GetCustomerAMCs(customerID uuid.UUID) ([]models.AMCAssignment, error) {
+	return s.repo.GetByCustomer(customerID)
+}
+
+/*
+	=========================
+	  COMPLETE VISIT
+
+=========================
+*/
 func (s *AMCAssignmentService) CompleteVisit(visitID uuid.UUID, visitDate time.Time) error {
-	if err := s.repo.CompleteVisit(visitID, visitDate); err != nil {
+	visit, err := s.repo.GetVisit(visitID)
+	if err != nil {
+		return err
+	}
+	if err := errIfAMCClosed(visit.AMCAssignment); err != nil {
 		return err
 	}
 
-	// Get visit to notify admin
-	visit, err := s.repo.GetVisit(visitID)
-	if err != nil {
+	if err := s.repo.CompleteVisit(visitID, visitDate); err != nil {
 		return err
 	}
 
@@ -176,6 +195,9 @@ func (s *AMCAssignmentService) RescheduleVisit(visitID uuid.UUID, scheduledFor t
 	if err != nil {
 		return nil, err
 	}
+	if err := errIfAMCClosed(visit.AMCAssignment); err != nil {
+		return nil, err
+	}
 	if visit.Status == "completed" {
 		return nil, errors.New("cannot reschedule a completed visit")
 	}
@@ -188,12 +210,23 @@ func (s *AMCAssignmentService) RescheduleVisit(visitID uuid.UUID, scheduledFor t
 	return s.repo.GetVisit(visitID)
 }
 
-/* =========================
-   ADD PROOF/IMAGES
-========================= */
+/*
+	=========================
+	  ADD PROOF/IMAGES
+
+=========================
+*/
 func (s *AMCAssignmentService) AddVisitProof(proof *models.AMCVisitProof) error {
 	if proof.AMCVisitID == uuid.Nil || proof.ImagePath == "" {
 		return errors.New("visit ID and image path are required")
+	}
+
+	visit, err := s.repo.GetVisit(proof.AMCVisitID)
+	if err != nil {
+		return err
+	}
+	if err := errIfAMCClosed(visit.AMCAssignment); err != nil {
+		return err
 	}
 
 	return s.repo.AddProof(proof)
@@ -205,6 +238,71 @@ func (s *AMCAssignmentService) GetVisitProofs(visitID uuid.UUID) ([]models.AMCVi
 
 func (s *AMCAssignmentService) GetProof(id uuid.UUID) (*models.AMCVisitProof, error) {
 	return s.repo.GetProof(id)
+}
+
+var (
+	ErrProofNotFound  = errors.New("proof not found")
+	ErrProofForbidden = errors.New("not authorized to modify this proof")
+	ErrProofLocked    = errors.New("cannot modify proofs on a completed visit")
+)
+
+func (s *AMCAssignmentService) loadMutableOwnedProof(proofID, engineerID uuid.UUID) (*models.AMCVisitProof, error) {
+	proof, err := s.repo.GetProof(proofID)
+	if err != nil {
+		if err.Error() == "proof not found" {
+			return nil, ErrProofNotFound
+		}
+		return nil, err
+	}
+
+	visit, err := s.repo.GetVisit(proof.AMCVisitID)
+	if err != nil {
+		return nil, err
+	}
+	if err := errIfAMCClosed(visit.AMCAssignment); err != nil {
+		return nil, err
+	}
+	if visit.Status == "completed" {
+		return nil, ErrProofLocked
+	}
+	if visit.AMCAssignment == nil || visit.AMCAssignment.SupportEngineerID != engineerID {
+		return nil, ErrProofForbidden
+	}
+
+	return proof, nil
+}
+
+func (s *AMCAssignmentService) UpdateVisitProof(proofID, engineerID uuid.UUID, imageURL, description *string) (*models.AMCVisitProof, error) {
+	if _, err := s.loadMutableOwnedProof(proofID, engineerID); err != nil {
+		return nil, err
+	}
+	if imageURL == nil && description == nil {
+		return nil, errors.New("no updates provided")
+	}
+
+	updates := map[string]interface{}{}
+	if imageURL != nil {
+		if strings.TrimSpace(*imageURL) == "" {
+			return nil, errors.New("image path is required")
+		}
+		updates["image_path"] = *imageURL
+		updates["uploaded_at"] = time.Now()
+	}
+	if description != nil {
+		updates["description"] = *description
+	}
+
+	if err := s.repo.UpdateProof(proofID, updates); err != nil {
+		return nil, err
+	}
+	return s.repo.GetProof(proofID)
+}
+
+func (s *AMCAssignmentService) DeleteVisitProof(proofID, engineerID uuid.UUID) error {
+	if _, err := s.loadMutableOwnedProof(proofID, engineerID); err != nil {
+		return err
+	}
+	return s.repo.DeleteProof(proofID)
 }
 
 /* =========================
@@ -225,11 +323,31 @@ func (s *AMCAssignmentService) UpdateAMCAssignment(id uuid.UUID, req *UpdateAMCA
 		return err
 	}
 
+	if assignmentStatus(assignment) == "closed" {
+		if req.Status != nil && strings.ToLower(strings.TrimSpace(*req.Status)) != "closed" {
+			return errors.New("closed AMC cannot be edited")
+		}
+		if req.SupportEngineerID != nil && *req.SupportEngineerID != assignment.SupportEngineerID {
+			return errors.New("closed AMC cannot be edited")
+		}
+		if req.AMCStartDate != nil && !req.AMCStartDate.Equal(assignment.AMCStartDate) {
+			return errors.New("closed AMC cannot be edited")
+		}
+		if req.AMCEndDate != nil && !req.AMCEndDate.Equal(assignment.AMCEndDate) {
+			return errors.New("closed AMC cannot be edited")
+		}
+	}
+
 	if req.Status != nil {
-		switch *req.Status {
-		case "active", "completed", "expired":
+		switch strings.ToLower(strings.TrimSpace(*req.Status)) {
+		case "active", "completed", "expired", "closed":
 		default:
 			return errors.New("invalid status")
+		}
+		normalized := strings.ToLower(strings.TrimSpace(*req.Status))
+		req.Status = &normalized
+		if normalized == "closed" && !AMCAssignmentCanClose(assignment, time.Now()) {
+			return errors.New("AMC can only be closed after it has expired")
 		}
 	}
 
