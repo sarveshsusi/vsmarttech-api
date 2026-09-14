@@ -161,6 +161,7 @@ func (r *TicketRepository) GetByEngineerID(engineerID uuid.UUID) ([]models.Ticke
 		Preload("Customer.Company").
 		Preload("CustomerSolution").
 		Preload("CustomerSolution.Solution").
+		Preload("Asset").
 		Preload("Attachments").
 		Where("engineer_id = ?", engineerID).
 		Order("created_at DESC").

@@ -57,10 +57,11 @@ type LoginResponse struct {
 }
 
 type UserInfo struct {
-	ID    uuid.UUID   `json:"id"`
-	Name  string      `json:"name"`
-	Email string      `json:"email"`
-	Role  models.Role `json:"role"`
+	ID        uuid.UUID   `json:"id"`
+	Name      string      `json:"name"`
+	Email     string      `json:"email"`
+	Role      models.Role `json:"role"`
+	AvatarURL string      `json:"avatar_url,omitempty"`
 }
 
 type GetuserInfo struct {
@@ -231,10 +232,11 @@ func (s *AuthService) Login(
 		AccessToken:  accessToken,
 		RefreshToken: refreshRaw,
 		User: &UserInfo{
-			ID:    user.ID,
-			Name:  user.Name,
-			Email: user.Email,
-			Role:  user.Role,
+			ID:        user.ID,
+			Name:      user.Name,
+			Email:     user.Email,
+			Role:      user.Role,
+			AvatarURL: user.AvatarURL,
 		},
 	}, nil
 }
@@ -311,9 +313,11 @@ func (s *AuthService) RefreshAccessToken(
 		AccessToken:  newAccess,
 		RefreshToken: newRefresh,
 		User: &UserInfo{
-			ID:    rt.User.ID,
-			Email: rt.User.Email,
-			Role:  rt.User.Role,
+			ID:        rt.User.ID,
+			Name:      rt.User.Name,
+			Email:     rt.User.Email,
+			Role:      rt.User.Role,
+			AvatarURL: rt.User.AvatarURL,
 		},
 	}, nil
 }
@@ -410,7 +414,7 @@ func (s *AuthService) GetUserByID(id uuid.UUID) (*models.User, error) {
 	return s.repo.FindUserByID(id)
 }
 
-func (s *AuthService) UpdateProfile(userID uuid.UUID, name string) (*models.User, error) {
+func (s *AuthService) UpdateProfile(userID uuid.UUID, name string, avatarURL *string, role models.Role) (*models.User, error) {
 	trimmed := strings.TrimSpace(name)
 	if len(trimmed) < 2 {
 		return nil, errors.New("name must be at least 2 characters")
@@ -419,9 +423,21 @@ func (s *AuthService) UpdateProfile(userID uuid.UUID, name string) (*models.User
 		return nil, errors.New("name must be at most 120 characters")
 	}
 
+	updates := map[string]interface{}{"name": trimmed}
+	if avatarURL != nil {
+		if role != models.RoleSupport {
+			return nil, errors.New("only support engineers can set a profile photo")
+		}
+		url := strings.TrimSpace(*avatarURL)
+		if !utils.IsAllowedStoredImageURL(url) {
+			return nil, errors.New("invalid profile photo")
+		}
+		updates["avatar_url"] = url
+	}
+
 	if err := s.db.Model(&models.User{}).
 		Where("id = ?", userID).
-		Update("name", trimmed).Error; err != nil {
+		Updates(updates).Error; err != nil {
 		return nil, errors.New("failed to update profile")
 	}
 
@@ -823,10 +839,11 @@ func (s *AuthService) issueTokens(user *models.User) (*LoginResponse, error) {
 		AccessToken:  accessToken,
 		RefreshToken: refreshRaw,
 		User: &UserInfo{
-			ID:    user.ID,
-			Name:  user.Name,
-			Email: user.Email,
-			Role:  user.Role,
+			ID:        user.ID,
+			Name:      user.Name,
+			Email:     user.Email,
+			Role:      user.Role,
+			AvatarURL: user.AvatarURL,
 		},
 	}, nil
 }

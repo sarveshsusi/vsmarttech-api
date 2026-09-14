@@ -142,7 +142,7 @@ func wireHTTP(
 	amcService := service.NewAMCAssignmentService(amcRepo, notificationService, customerSolutionRepo)
 	app.AMCAssignmentService = amcService
 
-	imageUploader, err := utils.NewS3Uploader(cfg)
+	imageUploader, err := utils.NewImageUploader(cfg)
 	if err != nil {
 		return err
 	}

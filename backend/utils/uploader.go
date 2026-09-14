@@ -1,6 +1,11 @@
 package utils
 
-import "mime/multipart"
+import (
+	"mime/multipart"
+	"strings"
+
+	"rbac/config"
+)
 
 type AuthTokenResponse struct {
 	Token     string `json:"token"`
@@ -21,4 +26,21 @@ type ImageUploader interface {
 
 	// GenerateAuthToken is deprecated (was for ImageKit)
 	GenerateAuthToken() (*AuthTokenResponse, error)
+}
+
+func NewImageUploader(cfg *config.Config) (ImageUploader, error) {
+	if cfg != nil && strings.EqualFold(cfg.Storage.Type, "s3") {
+		return NewS3Uploader(cfg)
+	}
+	localDir := "./uploads"
+	baseURL := "http://localhost:8080/uploads"
+	if cfg != nil {
+		if cfg.Storage.LocalDir != "" {
+			localDir = cfg.Storage.LocalDir
+		}
+		if cfg.Storage.BaseURL != "" {
+			baseURL = cfg.Storage.BaseURL
+		}
+	}
+	return NewLocalUploader(localDir, baseURL), nil
 }

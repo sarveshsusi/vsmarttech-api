@@ -81,12 +81,42 @@ type VerifyPasswordRequest struct {
 }
 
 type UpdateProfileRequest struct {
-	Name string `json:"name" binding:"required,min=2,max=120"`
+	Name      string  `json:"name" binding:"required,min=2,max=120"`
+	AvatarURL *string `json:"avatar_url"`
 }
 
 /* =====================
    Cookie Helpers
 ===================== */
+
+func publicUserJSON(user *models.User) gin.H {
+	if user == nil {
+		return gin.H{}
+	}
+	out := gin.H{
+		"id":    user.ID,
+		"name":  user.Name,
+		"email": user.Email,
+		"role":  user.Role,
+	}
+	if user.AvatarURL != "" {
+		out["avatar_url"] = user.AvatarURL
+	}
+	return out
+}
+
+func publicUserFromInfo(u *service.UserInfo) gin.H {
+	if u == nil {
+		return gin.H{}
+	}
+	return publicUserJSON(&models.User{
+		ID:        u.ID,
+		Name:      u.Name,
+		Email:     u.Email,
+		Role:      u.Role,
+		AvatarURL: u.AvatarURL,
+	})
+}
 
 func (h *AuthHandler) cookieSameSite() http.SameSite {
 	switch strings.ToLower(h.cfg.Server.CookieSameSite) {
@@ -186,7 +216,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"access_token": resp.AccessToken,
-		"user":         resp.User,
+		"user":         publicUserFromInfo(resp.User),
 	})
 }
 
@@ -216,7 +246,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"access_token": resp.AccessToken,
-		"user":         resp.User,
+		"user":         publicUserFromInfo(resp.User),
 	})
 }
 
@@ -326,7 +356,7 @@ func (h *AuthHandler) VerifyPassword(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-// Update own profile (name)
+// Update own profile (name, and profile photo URL for support engineers)
 func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 	var req UpdateProfileRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -335,18 +365,14 @@ func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 	}
 
 	userID := c.MustGet("user_id").(uuid.UUID)
-	user, err := h.service.UpdateProfile(userID, req.Name)
+	role := c.MustGet("user_role").(models.Role)
+	user, err := h.service.UpdateProfile(userID, req.Name, req.AvatarURL, role)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"id":    user.ID,
-		"name":  user.Name,
-		"email": user.Email,
-		"role":  user.Role,
-	})
+	c.JSON(http.StatusOK, publicUserJSON(user))
 }
 
 // Get current user
@@ -361,12 +387,7 @@ func (h *AuthHandler) GetMe(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"id":    user.ID,
-		"name":  user.Name, // ✅ FROM DB
-		"email": user.Email,
-		"role":  user.Role,
-	})
+	c.JSON(http.StatusOK, publicUserJSON(user))
 }
 
 func (h *AuthHandler) ResetPassword(c *gin.Context) {
@@ -564,7 +585,7 @@ func (h *AuthHandler) Verify2FA(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"access_token": resp.AccessToken,
-		"user":         resp.User,
+		"user":         publicUserFromInfo(resp.User),
 	})
 }
 

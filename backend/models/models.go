@@ -32,12 +32,12 @@ type User struct {
 	MustResetPassword bool       `json:"must_reset_password" gorm:"default:false"`
 	CreatedBy         *uuid.UUID `json:"created_by,omitempty" gorm:"type:uuid;index"`
 
+	AvatarURL    string     `json:"avatar_url,omitempty" gorm:"type:text"`
 	TwoFAEnabled bool       `json:"two_fa_enabled" gorm:"column:two_fa_enabled;default:false"`
 	LastLoginAt  *time.Time `json:"last_login_at,omitempty"`
 
-
-    LastOTPVerifiedAt    *time.Time `json:"last_otp_verified_at,omitempty"`
-    LastPasswordResetAt *time.Time `json:"last_password_reset_at,omitempty"`
+	LastOTPVerifiedAt   *time.Time `json:"last_otp_verified_at,omitempty"`
+	LastPasswordResetAt *time.Time `json:"last_password_reset_at,omitempty"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
