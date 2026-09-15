@@ -421,9 +421,9 @@ func (h *TicketHandler) UploadProofImage(c *gin.Context) {
 	}
 
 	// Hard size cap before reading (defense in depth — MaxBodySize also applies)
-	const maxUploadBytes = 1 << 20 // 1MB
+	const maxUploadBytes = 2 << 20 // 2MB (matches nginx upload location + multipart overhead)
 	if file.Size <= 0 || file.Size > maxUploadBytes {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "File must be between 1 byte and 1MB"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "File must be between 1 byte and 2MB"})
 		return
 	}
 

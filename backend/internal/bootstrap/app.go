@@ -182,7 +182,8 @@ func wireHTTP(
 	r.Use(middleware.SafeRecovery())
 	r.Use(middleware.SecurityHeaders())
 	r.Use(middleware.AuditLog())
-	r.Use(middleware.MaxBodySize(1 << 20))
+	// 2MB: JSON stays small; multipart /upload/proof is a ~1MB image plus form wrapping
+	r.Use(middleware.MaxBodySize(2 << 20))
 
 	if err := r.SetTrustedProxies(cfg.Server.TrustedProxies); err != nil {
 		log.Printf("warning: SetTrustedProxies: %v", err)
