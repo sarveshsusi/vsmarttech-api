@@ -42,6 +42,7 @@ func Migrate(db *gorm.DB, mode string) {
 		autoMigrate(db)
 		backfillRefreshTokenFamilyIDs(db)
 		backfillTicketFeedbackLifecycle(db)
+		backfillAMCVisitAssignees(db)
 		ensureTicketHaltedStatusCheck(db)
 		syncEngineerIDs(db)
 		log.Println("Database migration completed (auto)")
@@ -253,6 +254,22 @@ func backfillRefreshTokenFamilyIDs(db *gorm.DB) {
 	`)
 	if res.Error != nil {
 		log.Printf("warning: refresh_tokens family_id backfill: %v", res.Error)
+	}
+}
+
+func backfillAMCVisitAssignees(db *gorm.DB) {
+	if !db.Migrator().HasTable("amc_visits") || !db.Migrator().HasTable("amc_assignments") {
+		return
+	}
+	res := db.Exec(`
+		UPDATE amc_visits v
+		SET support_engineer_id = a.support_engineer_id
+		FROM amc_assignments a
+		WHERE v.amc_assignment_id = a.id
+		  AND v.support_engineer_id IS NULL
+	`)
+	if res.Error != nil {
+		log.Printf("warning: amc_visits assignee backfill: %v", res.Error)
 	}
 }
 

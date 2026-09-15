@@ -29,6 +29,8 @@ func (r *AMCAssignmentRepository) detailQuery() *gorm.DB {
 		Preload("Visits", func(db *gorm.DB) *gorm.DB {
 			return db.Order("quarter_start_date ASC")
 		}).
+		Preload("Visits.SupportEngineer").
+		Preload("Visits.SupportEngineer.User").
 		Preload("Visits.Proofs")
 }
 
@@ -158,6 +160,8 @@ func (r *AMCAssignmentRepository) GetVisit(id uuid.UUID) (*models.AMCVisit, erro
 	var visit models.AMCVisit
 	err := r.db.
 		Preload("Proofs").
+		Preload("SupportEngineer").
+		Preload("SupportEngineer.User").
 		Preload("AMCAssignment").
 		Where("id = ?", id).
 		First(&visit).Error
@@ -178,6 +182,16 @@ func (r *AMCAssignmentRepository) UpdateVisit(id uuid.UUID, updates map[string]i
 	return r.db.Model(&models.AMCVisit{}).Where("id = ?", id).Updates(updates).Error
 }
 
+// UpdateOpenVisitEngineer sets the assignee on visits that are not yet completed.
+func (r *AMCAssignmentRepository) UpdateOpenVisitEngineer(assignmentID, engineerID uuid.UUID) error {
+	return r.db.Model(&models.AMCVisit{}).
+		Where("amc_assignment_id = ? AND status <> ?", assignmentID, "completed").
+		Updates(map[string]interface{}{
+			"support_engineer_id": engineerID,
+			"updated_at":          time.Now(),
+		}).Error
+}
+
 // ListPendingPastDue returns pending visits whose scheduled date is before endOfDay.
 func (r *AMCAssignmentRepository) ListPendingPastDue(before time.Time) ([]models.AMCVisit, error) {
 	var visits []models.AMCVisit
@@ -193,6 +207,8 @@ func (r *AMCAssignmentRepository) GetVisitsByAssignment(assignmentID uuid.UUID) 
 	var visits []models.AMCVisit
 	err := r.db.
 		Preload("Proofs").
+		Preload("SupportEngineer").
+		Preload("SupportEngineer.User").
 		Where("amc_assignment_id = ?", assignmentID).
 		Order("quarter_start_date ASC").
 		Find(&visits).Error
@@ -228,16 +244,20 @@ func (r *AMCAssignmentRepository) DeleteNonCompletedVisits(assignmentID uuid.UUI
 }
 
 // CompleteVisit marks visit as completed
-func (r *AMCAssignmentRepository) CompleteVisit(id uuid.UUID, visitDate time.Time) error {
+func (r *AMCAssignmentRepository) CompleteVisit(id uuid.UUID, visitDate time.Time, engineerID *uuid.UUID) error {
 	now := time.Now()
+	updates := map[string]interface{}{
+		"status":       "completed",
+		"visit_date":   visitDate,
+		"completed_at": now,
+		"updated_at":   now,
+	}
+	if engineerID != nil && *engineerID != uuid.Nil {
+		updates["support_engineer_id"] = *engineerID
+	}
 	return r.db.Model(&models.AMCVisit{}).
 		Where("id = ?", id).
-		Updates(map[string]interface{}{
-			"status":       "completed",
-			"visit_date":   visitDate,
-			"completed_at": now,
-			"updated_at":   now,
-		}).Error
+		Updates(updates).Error
 }
 
 /* =========================

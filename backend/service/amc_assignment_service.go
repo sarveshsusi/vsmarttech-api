@@ -50,7 +50,12 @@ func (s *AMCAssignmentService) AssignAMC(assignmentReq *models.AMCAssignment) er
 	}
 
 	// Generate quarterly visits based on AMC dates
-	if err := s.generateQuarterlyVisits(assignmentReq.ID, assignmentReq.AMCStartDate, assignmentReq.AMCEndDate); err != nil {
+	if err := s.generateQuarterlyVisits(
+		assignmentReq.ID,
+		assignmentReq.SupportEngineerID,
+		assignmentReq.AMCStartDate,
+		assignmentReq.AMCEndDate,
+	); err != nil {
 		return err
 	}
 
@@ -71,7 +76,7 @@ func (s *AMCAssignmentService) AssignAMC(assignmentReq *models.AMCAssignment) er
 
 =========================
 */
-func (s *AMCAssignmentService) generateQuarterlyVisits(assignmentID uuid.UUID, startDate, endDate time.Time) error {
+func (s *AMCAssignmentService) generateQuarterlyVisits(assignmentID, engineerID uuid.UUID, startDate, endDate time.Time) error {
 	currentDate := startDate
 
 	// Generate visits for each quarter
@@ -85,8 +90,10 @@ func (s *AMCAssignmentService) generateQuarterlyVisits(assignmentID uuid.UUID, s
 		// Calculate visit scheduled date (middle of quarter or start + 1 month)
 		visitScheduled := currentDate.AddDate(0, 1, 0) // 1 month into quarter
 
+		engID := engineerID
 		visit := &models.AMCVisit{
 			AMCAssignmentID:   assignmentID,
+			SupportEngineerID: &engID,
 			QuarterStartDate:  currentDate,
 			QuarterEndDate:    quarterEnd,
 			VisitScheduledFor: visitScheduled,
@@ -143,7 +150,13 @@ func (s *AMCAssignmentService) CompleteVisit(visitID uuid.UUID, visitDate time.T
 		return err
 	}
 
-	if err := s.repo.CompleteVisit(visitID, visitDate); err != nil {
+	engineerID := visit.SupportEngineerID
+	if engineerID == nil && visit.AMCAssignment != nil {
+		id := visit.AMCAssignment.SupportEngineerID
+		engineerID = &id
+	}
+
+	if err := s.repo.CompleteVisit(visitID, visitDate, engineerID); err != nil {
 		return err
 	}
 
@@ -360,8 +373,13 @@ func (s *AMCAssignmentService) UpdateAMCAssignment(id uuid.UUID, req *UpdateAMCA
 	}
 
 	updates := map[string]interface{}{}
+	engineerChanged := false
 
 	if req.SupportEngineerID != nil && *req.SupportEngineerID != uuid.Nil {
+		if *req.SupportEngineerID != assignment.SupportEngineerID {
+			engineerChanged = true
+			updates["assigned_at"] = time.Now()
+		}
 		updates["support_engineer_id"] = *req.SupportEngineerID
 	}
 	if req.Status != nil {
@@ -401,9 +419,26 @@ func (s *AMCAssignmentService) UpdateAMCAssignment(id uuid.UUID, req *UpdateAMCA
 	}
 
 	if datesChanged {
-		if err := s.regenerateNonCompletedVisits(id, assignment.Visits, newStart, newEnd); err != nil {
+		engineerID := assignment.SupportEngineerID
+		if req.SupportEngineerID != nil && *req.SupportEngineerID != uuid.Nil {
+			engineerID = *req.SupportEngineerID
+		}
+		if err := s.regenerateNonCompletedVisits(id, engineerID, assignment.Visits, newStart, newEnd); err != nil {
 			return err
 		}
+	} else if engineerChanged {
+		if err := s.repo.UpdateOpenVisitEngineer(id, *req.SupportEngineerID); err != nil {
+			return err
+		}
+	}
+
+	if engineerChanged {
+		s.notificationService.NotifyAMCAssigned(
+			*req.SupportEngineerID,
+			id,
+			newStart,
+			newEnd,
+		)
 	}
 
 	return nil
@@ -413,6 +448,7 @@ func (s *AMCAssignmentService) UpdateAMCAssignment(id uuid.UUID, req *UpdateAMCA
 // schedule after a date change, without touching visits already completed.
 func (s *AMCAssignmentService) regenerateNonCompletedVisits(
 	assignmentID uuid.UUID,
+	engineerID uuid.UUID,
 	existingVisits []models.AMCVisit,
 	startDate, endDate time.Time,
 ) error {
@@ -433,7 +469,7 @@ func (s *AMCAssignmentService) regenerateNonCompletedVisits(
 		return nil // contract shortened past the last completed visit — nothing left to schedule
 	}
 
-	return s.generateQuarterlyVisits(assignmentID, regenFrom, endDate)
+	return s.generateQuarterlyVisits(assignmentID, engineerID, regenFrom, endDate)
 }
 
 /* =========================
