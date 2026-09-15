@@ -23,6 +23,7 @@ func RegisterAdmin(admin *gin.RouterGroup, h Handlers) {
 	admin.GET("/amc-assignments", h.AMC.GetAllAMCs)
 	admin.GET("/amc-assignments/:id", h.AMC.GetAMCAssignment)
 	admin.PUT("/amc-assignments/:id", h.AMC.UpdateAMCAssignment)
+	admin.POST("/amc-assignments/:id/reassign", h.AMC.ReassignAMC)
 	admin.DELETE("/amc-assignments/:id", h.AMC.DeleteAMCAssignment)
 	admin.GET("/amc-assignments/:id/proofs", h.AMC.GetVisitProofs)
 	admin.GET("/amc-proofs/:id/image", h.AMC.ServeProofImage)

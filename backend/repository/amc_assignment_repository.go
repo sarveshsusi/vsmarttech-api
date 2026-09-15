@@ -31,7 +31,15 @@ func (r *AMCAssignmentRepository) detailQuery() *gorm.DB {
 		}).
 		Preload("Visits.SupportEngineer").
 		Preload("Visits.SupportEngineer.User").
-		Preload("Visits.Proofs")
+		Preload("Visits.Proofs").
+		Preload("AssignmentEvents", func(db *gorm.DB) *gorm.DB {
+			return db.Order("created_at ASC")
+		}).
+		Preload("AssignmentEvents.Actor").
+		Preload("AssignmentEvents.FromEngineer").
+		Preload("AssignmentEvents.FromEngineer.User").
+		Preload("AssignmentEvents.ToEngineer").
+		Preload("AssignmentEvents.ToEngineer.User")
 }
 
 /* =========================
@@ -139,8 +147,23 @@ func (r *AMCAssignmentRepository) Delete(id uuid.UUID) error {
 			}
 		}
 
+		if err := tx.Where("amc_assignment_id = ?", id).
+			Delete(&models.AMCAssignmentEvent{}).Error; err != nil {
+			return err
+		}
+
 		return tx.Delete(&models.AMCAssignment{}, "id = ?", id).Error
 	})
+}
+
+func (r *AMCAssignmentRepository) CreateAssignmentEvent(event *models.AMCAssignmentEvent) error {
+	if event.ID == uuid.Nil {
+		event.ID = uuid.New()
+	}
+	if event.CreatedAt.IsZero() {
+		event.CreatedAt = time.Now()
+	}
+	return r.db.Create(event).Error
 }
 
 /* =========================

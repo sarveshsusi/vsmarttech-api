@@ -534,6 +534,7 @@ func (h *AMCAssignmentHandler) UpdateAMCAssignment(c *gin.Context) {
 		AMCEndDate:        req.AMCEndDate,
 		Status:            req.Status,
 		Notes:             req.Notes,
+		ActorUserID:       c.MustGet("user_id").(uuid.UUID),
 	})
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -548,6 +549,46 @@ func (h *AMCAssignmentHandler) UpdateAMCAssignment(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"message":    "AMC assignment updated successfully",
+		"assignment": updated,
+	})
+}
+
+/*
+	=========================
+	  ADMIN: REASSIGN AMC
+
+=========================
+*/
+func (h *AMCAssignmentHandler) ReassignAMC(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid assignment id"})
+		return
+	}
+
+	var req struct {
+		SupportEngineerID uuid.UUID `json:"support_engineer_id" binding:"required"`
+		Note              string    `json:"note"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+
+	adminID := c.MustGet("user_id").(uuid.UUID)
+	if err := h.service.ReassignAMC(id, req.SupportEngineerID, adminID, req.Note); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	updated, err := h.service.GetAMCAssignment(id)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"message": "AMC reassigned successfully"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":    "AMC reassigned successfully",
 		"assignment": updated,
 	})
 }

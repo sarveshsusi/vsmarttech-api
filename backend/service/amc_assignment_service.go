@@ -59,6 +59,13 @@ func (s *AMCAssignmentService) AssignAMC(assignmentReq *models.AMCAssignment) er
 		return err
 	}
 
+	_ = s.repo.CreateAssignmentEvent(&models.AMCAssignmentEvent{
+		AMCAssignmentID: assignmentReq.ID,
+		EventType:       models.AMCEventAssigned,
+		ActorUserID:     assignmentReq.AssignedBy,
+		ToEngineerID:    assignmentReq.SupportEngineerID,
+	})
+
 	// Send notification to engineer
 	s.notificationService.NotifyAMCAssigned(
 		assignmentReq.SupportEngineerID,
@@ -328,6 +335,29 @@ type UpdateAMCAssignmentRequest struct {
 	AMCEndDate        *time.Time
 	Status            *string
 	Notes             *string
+	ActorUserID       uuid.UUID
+	ReassignNote      string
+}
+
+func (s *AMCAssignmentService) ReassignAMC(id, engineerID, actorID uuid.UUID, note string) error {
+	if engineerID == uuid.Nil {
+		return errors.New("engineer is required")
+	}
+	assignment, err := s.repo.GetByID(id)
+	if err != nil {
+		return err
+	}
+	if assignmentStatus(assignment) == "closed" {
+		return errors.New("closed AMC cannot be reassigned")
+	}
+	if engineerID == assignment.SupportEngineerID {
+		return errors.New("AMC is already assigned to this engineer")
+	}
+	return s.UpdateAMCAssignment(id, &UpdateAMCAssignmentRequest{
+		SupportEngineerID: &engineerID,
+		ActorUserID:       actorID,
+		ReassignNote:      note,
+	})
 }
 
 func (s *AMCAssignmentService) UpdateAMCAssignment(id uuid.UUID, req *UpdateAMCAssignmentRequest) error {
@@ -433,6 +463,15 @@ func (s *AMCAssignmentService) UpdateAMCAssignment(id uuid.UUID, req *UpdateAMCA
 	}
 
 	if engineerChanged {
+		fromID := assignment.SupportEngineerID
+		_ = s.repo.CreateAssignmentEvent(&models.AMCAssignmentEvent{
+			AMCAssignmentID: assignment.ID,
+			EventType:       models.AMCEventReassigned,
+			ActorUserID:     req.ActorUserID,
+			FromEngineerID:  &fromID,
+			ToEngineerID:    *req.SupportEngineerID,
+			Note:            strings.TrimSpace(req.ReassignNote),
+		})
 		s.notificationService.NotifyAMCAssigned(
 			*req.SupportEngineerID,
 			id,

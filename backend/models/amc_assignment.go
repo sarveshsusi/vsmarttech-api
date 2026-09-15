@@ -26,9 +26,10 @@ type AMCAssignment struct {
 	UpdatedAt          time.Time `json:"updated_at"`
 
 	// Relations
-	CustomerSolution *CustomerSolution `json:"customer_solution,omitempty" gorm:"foreignKey:CustomerSolutionID"`
-	SupportEngineer  *SupportEngineer  `json:"support_engineer,omitempty" gorm:"foreignKey:SupportEngineerID"`
-	Visits           []AMCVisit        `json:"visits,omitempty" gorm:"foreignKey:AMCAssignmentID"`
+	CustomerSolution *CustomerSolution    `json:"customer_solution,omitempty" gorm:"foreignKey:CustomerSolutionID"`
+	SupportEngineer  *SupportEngineer     `json:"support_engineer,omitempty" gorm:"foreignKey:SupportEngineerID"`
+	Visits           []AMCVisit           `json:"visits,omitempty" gorm:"foreignKey:AMCAssignmentID"`
+	AssignmentEvents []AMCAssignmentEvent `json:"assignment_events,omitempty" gorm:"foreignKey:AMCAssignmentID"`
 }
 
 /*
@@ -91,4 +92,34 @@ func (AMCVisit) TableName() string {
 
 func (AMCVisitProof) TableName() string {
 	return "amc_visit_proofs"
+}
+
+/*
+	=========================
+	  AMC ASSIGNMENT EVENTS
+
+=========================
+*/
+const (
+	AMCEventAssigned   = "assigned"
+	AMCEventReassigned = "reassigned"
+)
+
+type AMCAssignmentEvent struct {
+	ID              uuid.UUID  `json:"id" gorm:"primaryKey"`
+	AMCAssignmentID uuid.UUID  `json:"amc_assignment_id" gorm:"type:uuid;index;not null"`
+	EventType       string     `json:"event_type" gorm:"type:varchar(32);index;not null"`
+	ActorUserID     uuid.UUID  `json:"actor_user_id" gorm:"type:uuid;index;not null"`
+	FromEngineerID  *uuid.UUID `json:"from_engineer_id,omitempty" gorm:"type:uuid"`
+	ToEngineerID    uuid.UUID  `json:"to_engineer_id" gorm:"type:uuid;index;not null"`
+	Note            string     `json:"note,omitempty" gorm:"type:text"`
+	CreatedAt       time.Time  `json:"created_at"`
+
+	Actor        *User            `json:"actor,omitempty" gorm:"foreignKey:ActorUserID"`
+	FromEngineer *SupportEngineer `json:"from_engineer,omitempty" gorm:"foreignKey:FromEngineerID"`
+	ToEngineer   *SupportEngineer `json:"to_engineer,omitempty" gorm:"foreignKey:ToEngineerID"`
+}
+
+func (AMCAssignmentEvent) TableName() string {
+	return "amc_assignment_events"
 }

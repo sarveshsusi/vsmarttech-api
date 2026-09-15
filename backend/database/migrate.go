@@ -43,6 +43,7 @@ func Migrate(db *gorm.DB, mode string) {
 		backfillRefreshTokenFamilyIDs(db)
 		backfillTicketFeedbackLifecycle(db)
 		backfillAMCVisitAssignees(db)
+		backfillAMCAssignmentEvents(db)
 		ensureTicketHaltedStatusCheck(db)
 		syncEngineerIDs(db)
 		log.Println("Database migration completed (auto)")
@@ -202,6 +203,7 @@ func autoMigrate(db *gorm.DB) {
 		&models.AMCAssignment{},
 		&models.AMCVisit{},
 		&models.AMCVisitProof{},
+		&models.AMCAssignmentEvent{},
 
 		/* =========================
 		   NOTIFICATIONS
@@ -270,6 +272,42 @@ func backfillAMCVisitAssignees(db *gorm.DB) {
 	`)
 	if res.Error != nil {
 		log.Printf("warning: amc_visits assignee backfill: %v", res.Error)
+	}
+}
+
+func backfillAMCAssignmentEvents(db *gorm.DB) {
+	if !db.Migrator().HasTable("amc_assignment_events") || !db.Migrator().HasTable("amc_assignments") {
+		return
+	}
+	res := db.Exec(`
+		INSERT INTO amc_assignment_events (
+			id,
+			amc_assignment_id,
+			event_type,
+			actor_user_id,
+			to_engineer_id,
+			created_at
+		)
+		SELECT
+			gen_random_uuid(),
+			a.id,
+			'assigned',
+			a.assigned_by,
+			a.support_engineer_id,
+			COALESCE(a.assigned_at, a.created_at, NOW())
+		FROM amc_assignments a
+		WHERE a.assigned_by IS NOT NULL
+		  AND a.assigned_by <> '00000000-0000-0000-0000-000000000000'
+		  AND a.support_engineer_id IS NOT NULL
+		  AND a.support_engineer_id <> '00000000-0000-0000-0000-000000000000'
+		  AND NOT EXISTS (
+			SELECT 1
+			FROM amc_assignment_events e
+			WHERE e.amc_assignment_id = a.id
+		  )
+	`)
+	if res.Error != nil {
+		log.Printf("warning: amc_assignment_events backfill: %v", res.Error)
 	}
 }
 
