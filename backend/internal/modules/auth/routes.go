@@ -23,6 +23,7 @@ func RegisterPublic(api *gin.RouterGroup, h *handler.AuthHandler, cfg *config.Co
 func RegisterProtected(protected *gin.RouterGroup, h *handler.AuthHandler) {
 	protected.POST("/logout", h.Logout)
 	protected.GET("/profile", h.GetMe)
+	protected.GET("/users/:id/avatar", h.ServeUserAvatar)
 	protected.PUT("/profile", h.UpdateProfile)
 	protected.POST("/change-password", h.ChangePassword)
 	protected.POST("/verify-password", h.VerifyPassword)

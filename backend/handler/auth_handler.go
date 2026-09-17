@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -16,14 +17,16 @@ import (
 )
 
 type AuthHandler struct {
-	service *service.AuthService
-	cfg     *config.Config
+	service  *service.AuthService
+	cfg      *config.Config
+	uploader utils.ImageUploader
 }
 
-func NewAuthHandler(service *service.AuthService, cfg *config.Config) *AuthHandler {
+func NewAuthHandler(service *service.AuthService, cfg *config.Config, uploader utils.ImageUploader) *AuthHandler {
 	return &AuthHandler{
-		service: service,
-		cfg:     cfg,
+		service:  service,
+		cfg:      cfg,
+		uploader: uploader,
 	}
 }
 
@@ -373,6 +376,52 @@ func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, publicUserJSON(user))
+}
+
+// ServeUserAvatar streams a stored profile photo through the API so private
+// S3 objects are visible in <img> tags that cannot send a Bearer token.
+func (h *AuthHandler) ServeUserAvatar(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
+		return
+	}
+
+	user, err := h.service.GetUserByID(id)
+	if err != nil || user == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Avatar not found"})
+		return
+	}
+
+	avatarURL := strings.TrimSpace(user.AvatarURL)
+	if avatarURL == "" {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Avatar not found"})
+		return
+	}
+
+	if h.uploader == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Avatar storage is unavailable"})
+		return
+	}
+
+	data, contentType, err := h.uploader.OpenStored(avatarURL)
+	if err != nil {
+		log.Printf("[USER_AVATAR] user_id=%s err=%v", id, err)
+		if strings.HasPrefix(avatarURL, "https://") || strings.HasPrefix(avatarURL, "http://") {
+			if _, _, isS3 := utils.ParseS3ObjectRef(avatarURL, ""); !isS3 {
+				c.Redirect(http.StatusFound, avatarURL)
+				return
+			}
+		}
+		c.JSON(http.StatusNotFound, gin.H{"error": "Avatar not found"})
+		return
+	}
+
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	c.Header("Cache-Control", "private, max-age=300")
+	c.Data(http.StatusOK, contentType, data)
 }
 
 // Get current user

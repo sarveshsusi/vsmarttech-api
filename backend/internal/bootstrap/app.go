@@ -147,7 +147,7 @@ func wireHTTP(
 		return err
 	}
 
-	authHandler := handler.NewAuthHandler(authService, cfg)
+	authHandler := handler.NewAuthHandler(authService, cfg, imageUploader)
 	adminDashboard := handler.NewAdminDashboardHandler(adminService)
 	supportDashboard := handler.NewSupportDashboardHandler(supportService, adminService)
 	customerDashboard := handler.NewCustomerDashboardHandler(customerService, adminService)

@@ -37,22 +37,22 @@ func (r *TicketRepository) GenerateNextTicketID() (string, error) {
 	now := time.Now()
 	month := fmt.Sprintf("%02d", now.Month())
 	year := fmt.Sprintf("%02d", now.Year()%100)
-	
+
 	// Get count of tickets for current month/year
 	prefix := fmt.Sprintf("VS/%s/%s/", month, year)
-	
+
 	var count int64
 	err := r.db.Model(&models.Ticket{}).
 		Where("id LIKE ?", prefix+"%").
 		Count(&count).Error
-	
+
 	if err != nil {
 		return "", err
 	}
-	
+
 	// Next ticket number for this month
 	nextNumber := count + 1
-	
+
 	ticketID := fmt.Sprintf("VS/%s/%s/%d", month, year, nextNumber)
 	return ticketID, nil
 }
@@ -145,6 +145,8 @@ func (r *TicketRepository) GetByCustomerID(customerID uuid.UUID) ([]models.Ticke
 	err := r.db.
 		Preload("Customer").
 		Preload("Attachments").
+		Preload("SupportEngineer").
+		Preload("SupportEngineer.User").
 		Where("customer_id = ?", customerID).
 		Order("created_at DESC").
 		Find(&tickets).Error
