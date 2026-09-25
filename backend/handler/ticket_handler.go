@@ -39,10 +39,10 @@ func NewTicketHandler(
 ========================= */
 
 type CustomerCreateTicketRequest struct {
-	Title              string      `json:"title" binding:"required"`
-	Description        string      `json:"description" binding:"required"`
-	CustomerSolutionID *uuid.UUID  `json:"customer_solution_id"`
-	AttachmentURLs     []string    `json:"attachment_urls"`
+	Title              string     `json:"title" binding:"required"`
+	Description        string     `json:"description" binding:"required"`
+	CustomerSolutionID *uuid.UUID `json:"customer_solution_id"`
+	AttachmentURLs     []string   `json:"attachment_urls"`
 }
 
 type AdminAssignTicketRequest struct {
@@ -354,7 +354,7 @@ func (h *TicketHandler) GetTicketById(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "ticket_id is required"})
 		return
 	}
-	
+
 	userID := c.MustGet("user_id").(uuid.UUID)
 
 	// Get ticket from service
@@ -480,11 +480,12 @@ func (h *TicketHandler) UploadProofImage(c *gin.Context) {
 ========================= */
 
 type CreateFieldVisitRequest struct {
-	TicketID      string      `json:"ticket_id" binding:"required"`
-	VisitDate     string      `json:"visit_date" binding:"required"`
-	Notes         string      `json:"notes" binding:"required"`
-	CoEngineerIDs []uuid.UUID `json:"co_engineer_ids"`
-	ProofURLs     []string    `json:"proof_urls"`
+	TicketID       string      `json:"ticket_id" binding:"required"`
+	VisitDate      string      `json:"visit_date" binding:"required"`
+	Notes          string      `json:"notes"`
+	CoEngineerIDs  []uuid.UUID `json:"co_engineer_ids"`
+	OtherEngineers string      `json:"other_engineers"`
+	ProofURLs      []string    `json:"proof_urls"`
 }
 
 func (h *TicketHandler) ListSupportTicketVisits(c *gin.Context) {
@@ -523,11 +524,12 @@ func (h *TicketHandler) CreateSupportTicketVisit(c *gin.Context) {
 	}
 
 	visit, err := h.service.CreateFieldVisit(userID, service.CreateFieldVisitInput{
-		TicketID:      req.TicketID,
-		VisitDate:     visitDate,
-		Notes:         strings.TrimSpace(req.Notes),
-		CoEngineerIDs: req.CoEngineerIDs,
-		ProofURLs:     req.ProofURLs,
+		TicketID:       req.TicketID,
+		VisitDate:      visitDate,
+		Notes:          strings.TrimSpace(req.Notes),
+		CoEngineerIDs:  req.CoEngineerIDs,
+		OtherEngineers: strings.TrimSpace(req.OtherEngineers),
+		ProofURLs:      req.ProofURLs,
 	})
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

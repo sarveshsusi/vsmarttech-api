@@ -31,13 +31,14 @@ func (SupportEngineer) TableName() string {
 ========================= */
 
 type ServiceVisit struct {
-	ID         uuid.UUID `json:"id" gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	TicketID   string    `json:"ticket_id" gorm:"type:varchar(20);index;not null"`
-	EngineerID uuid.UUID `json:"engineer_id" gorm:"type:uuid;index;not null"` // assigned engineer who logged the visit
-	VisitDate  time.Time `json:"visit_date" gorm:"type:date;not null"`
-	Notes      string    `json:"notes" gorm:"type:text;not null"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	ID             uuid.UUID `json:"id" gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	TicketID       string    `json:"ticket_id" gorm:"type:varchar(20);index;not null"`
+	EngineerID     uuid.UUID `json:"engineer_id" gorm:"type:uuid;index;not null"` // assigned engineer who logged the visit
+	VisitDate      time.Time `json:"visit_date" gorm:"type:date;not null"`
+	Notes          string    `json:"notes" gorm:"type:text;not null"`
+	OtherEngineers string    `json:"other_engineers,omitempty" gorm:"type:varchar(200)"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 
 	// Keep legacy columns nullable so AutoMigrate does not break existing rows
 	StartTime *time.Time `json:"-" gorm:"column:start_time"`

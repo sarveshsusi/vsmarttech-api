@@ -1067,6 +1067,7 @@ type CreateFieldVisitInput struct {
 	VisitDate      time.Time
 	Notes          string
 	CoEngineerIDs  []uuid.UUID
+	OtherEngineers string
 	ProofURLs      []string
 }
 
@@ -1151,9 +1152,6 @@ func (s *TicketService) CreateFieldVisit(
 	if input.TicketID == "" {
 		return nil, errors.New("ticket_id is required")
 	}
-	if input.Notes == "" {
-		return nil, errors.New("notes are required")
-	}
 	if input.VisitDate.IsZero() {
 		return nil, errors.New("visit_date is required")
 	}
@@ -1192,6 +1190,11 @@ func (s *TicketService) CreateFieldVisit(
 		coIDs = append(coIDs, id)
 	}
 
+	otherEngineers, err := sanitizeOtherEngineers(input.OtherEngineers)
+	if err != nil {
+		return nil, err
+	}
+
 	visitDate := time.Date(
 		input.VisitDate.Year(),
 		input.VisitDate.Month(),
@@ -1201,11 +1204,12 @@ func (s *TicketService) CreateFieldVisit(
 	)
 
 	visit := &models.ServiceVisit{
-		TicketID:   input.TicketID,
-		EngineerID: engineer.ID,
-		VisitDate:  visitDate,
-		Notes:      input.Notes,
-		StartTime:  &visitDate, // satisfy legacy NOT NULL column if present
+		TicketID:       input.TicketID,
+		EngineerID:     engineer.ID,
+		VisitDate:      visitDate,
+		Notes:          input.Notes,
+		OtherEngineers: otherEngineers,
+		StartTime:      &visitDate, // satisfy legacy NOT NULL column if present
 	}
 
 	if err := s.visitRepo.Create(visit); err != nil {
@@ -1240,6 +1244,27 @@ func (s *TicketService) CreateFieldVisit(
 		}
 	}
 	return visit, nil
+}
+
+func sanitizeOtherEngineers(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", nil
+	}
+	parts := strings.Split(raw, ",")
+	names := make([]string, 0, len(parts))
+	for _, p := range parts {
+		n := strings.Join(strings.Fields(strings.TrimSpace(p)), " ")
+		if n == "" {
+			continue
+		}
+		names = append(names, n)
+	}
+	cleaned := strings.Join(names, ", ")
+	if len(cleaned) > 200 {
+		return "", errors.New("other engineer names must be at most 200 characters")
+	}
+	return cleaned, nil
 }
 
 func (s *TicketService) resolveSupportEngineer(userID uuid.UUID) (*models.SupportEngineer, error) {
@@ -1288,8 +1313,8 @@ func (s *TicketService) ReopenTicket(
 
 		// Keep engineer_id and customer_solution_id — only clear closed state.
 		if err := repo.UpdateFields(ticketID, map[string]interface{}{
-			"status":    newStatus,
-			"closed_at": nil,
+			"status":     newStatus,
+			"closed_at":  nil,
 			"updated_at": now,
 		}); err != nil {
 			return err
