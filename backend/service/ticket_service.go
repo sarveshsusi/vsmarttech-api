@@ -1152,9 +1152,6 @@ func (s *TicketService) CreateFieldVisit(
 	if input.TicketID == "" {
 		return nil, errors.New("ticket_id is required")
 	}
-	if strings.TrimSpace(input.Notes) == "" {
-		return nil, errors.New("notes are required")
-	}
 	if input.VisitDate.IsZero() {
 		return nil, errors.New("visit_date is required")
 	}

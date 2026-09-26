@@ -482,7 +482,7 @@ func (h *TicketHandler) UploadProofImage(c *gin.Context) {
 type CreateFieldVisitRequest struct {
 	TicketID       string      `json:"ticket_id" binding:"required"`
 	VisitDate      string      `json:"visit_date" binding:"required"`
-	Notes          string      `json:"notes" binding:"required"`
+	Notes          string      `json:"notes"`
 	CoEngineerIDs  []uuid.UUID `json:"co_engineer_ids"`
 	OtherEngineers string      `json:"other_engineers"`
 	ProofURLs      []string    `json:"proof_urls"`
