@@ -140,7 +140,7 @@ func (s *TourAdvanceService) Create(actor uuid.UUID, role models.Role, in Create
 	hasTicket := ticketID != ""
 	if hasTicket {
 		var ticket models.Ticket
-		err := s.db.Select("id", "customer_id").Where("id = ?", ticketID).First(&ticket).Error
+		err := s.db.Select("id", "customer_id", "status").Where("id = ?", ticketID).First(&ticket).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, &domain.RuleError{Msg: "ticket not found"}
 		}
@@ -149,6 +149,9 @@ func (s *TourAdvanceService) Create(actor uuid.UUID, role models.Role, in Create
 		}
 		if ticket.CustomerID != customer.ID {
 			return nil, &domain.RuleError{Msg: "ticket does not belong to the selected customer"}
+		}
+		if ticket.Status == models.StatusClosed {
+			return nil, &domain.RuleError{Msg: "closed tickets cannot be selected"}
 		}
 	}
 
@@ -424,7 +427,7 @@ func (s *TourAdvanceService) Delete(actor uuid.UUID, role models.Role, id uuid.U
 
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where(
-			"type IN ? AND metadata LIKE ?",
+			"type IN ? AND CAST(metadata AS TEXT) LIKE ?",
 			[]models.NotificationType{
 				models.NotificationTypeTourAdvanceSubmitted,
 				models.NotificationTypeTourAdvanceApproved,
@@ -585,7 +588,9 @@ func (s *TourAdvanceService) ListTickets(customerID uuid.UUID) ([]TicketOption, 
 		return nil, err
 	}
 	var rows []models.Ticket
-	if err := s.db.Select("id", "title").Where("customer_id = ?", customerID).Order("created_at DESC").Limit(200).Find(&rows).Error; err != nil {
+	if err := s.db.Select("id", "title").
+		Where("customer_id = ? AND status <> ?", customerID, models.StatusClosed).
+		Order("created_at DESC").Limit(200).Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	out := make([]TicketOption, 0, len(rows))
