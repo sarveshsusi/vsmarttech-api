@@ -45,8 +45,53 @@ func Migrate(db *gorm.DB, mode string) {
 		backfillAMCVisitAssignees(db)
 		backfillAMCAssignmentEvents(db)
 		ensureTicketHaltedStatusCheck(db)
+		ensureTourAdvanceSchema(db)
 		syncEngineerIDs(db)
 		log.Println("Database migration completed (auto)")
+	}
+}
+
+func ensureTourAdvanceSchema(db *gorm.DB) {
+	if !db.Migrator().HasTable("tour_advance_requests") {
+		return
+	}
+	statements := []string{
+		`CREATE SEQUENCE IF NOT EXISTS tour_advance_request_number_seq START 1`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_tour_advance_requests_request_number ON tour_advance_requests (request_number)`,
+		`CREATE INDEX IF NOT EXISTS idx_tour_advance_requests_engineer_id ON tour_advance_requests (engineer_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_tour_advance_requests_customer_id ON tour_advance_requests (customer_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_tour_advance_requests_status ON tour_advance_requests (status)`,
+		`CREATE INDEX IF NOT EXISTS idx_tour_advance_requests_status_created ON tour_advance_requests (status, created_at)`,
+		`ALTER TABLE tour_advance_requests DROP CONSTRAINT IF EXISTS tour_advance_work_check`,
+		`ALTER TABLE tour_advance_requests ADD CONSTRAINT tour_advance_work_check CHECK (
+			(work_type = 'INSTALLATION' AND po_number IS NOT NULL AND length(btrim(po_number)) > 0 AND ticket_id IS NULL)
+			OR (work_type = 'SERVICE' AND ticket_id IS NOT NULL AND po_number IS NULL)
+		)`,
+		`ALTER TABLE tour_advance_requests DROP CONSTRAINT IF EXISTS tour_advance_status_check`,
+		`ALTER TABLE tour_advance_requests ADD CONSTRAINT tour_advance_status_check CHECK (
+			status IN ('PENDING_APPROVAL', 'APPROVED', 'REJECTED', 'BILL_SUBMITTED', 'PROCESSED')
+		)`,
+		`ALTER TABLE tour_advance_requests DROP CONSTRAINT IF EXISTS tour_advance_travel_mode_check`,
+		`ALTER TABLE tour_advance_requests ADD CONSTRAINT tour_advance_travel_mode_check CHECK (
+			travel_mode IN ('BUS', 'TRAIN', 'CAR')
+		)`,
+		`ALTER TABLE tour_advance_requests DROP CONSTRAINT IF EXISTS tour_advance_counts_check`,
+		`ALTER TABLE tour_advance_requests ADD CONSTRAINT tour_advance_counts_check CHECK (
+			persons_travelling > 0 AND days_planned > 0
+		)`,
+		`ALTER TABLE tour_advance_requests DROP CONSTRAINT IF EXISTS tour_advance_expenses_check`,
+		`ALTER TABLE tour_advance_requests ADD CONSTRAINT tour_advance_expenses_check CHECK (
+			food_expense >= 0 AND local_expense >= 0 AND accommodation_expense >= 0 AND travel_expense >= 0 AND requested_amount >= 0
+		)`,
+		`ALTER TABLE tour_advance_requests DROP CONSTRAINT IF EXISTS tour_advance_approved_amount_check`,
+		`ALTER TABLE tour_advance_requests ADD CONSTRAINT tour_advance_approved_amount_check CHECK (
+			approved_amount IS NULL OR (approved_amount > 0 AND approved_amount <= requested_amount)
+		)`,
+	}
+	for _, statement := range statements {
+		if err := db.Exec(statement).Error; err != nil {
+			log.Printf("warning: tour advance schema: %v", err)
+		}
 	}
 }
 
@@ -212,6 +257,12 @@ func autoMigrate(db *gorm.DB) {
 		&models.WebhookEvent{},
 		&models.NotificationPreference{},
 		&models.PushSubscription{},
+
+		/* =========================
+		   TOUR ADVANCE
+		========================= */
+		&models.TourAdvanceRequest{},
+		&models.TourAdvanceEvent{},
 	)
 
 	if err != nil {

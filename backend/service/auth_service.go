@@ -529,6 +529,10 @@ func (s *AuthService) CreateUser(
 	phone string,
 ) (*models.User, error) {
 
+	if !models.IsKnownRole(role) {
+		return nil, errors.New("invalid role")
+	}
+
 	existing, _ := s.repo.FindUserByEmail(email)
 	if existing != nil {
 		return nil, errors.New("user already exists")
@@ -630,6 +634,10 @@ func (s *AuthService) UpdateUser(
 	role string,
 	isActive bool,
 ) (*models.User, error) {
+
+	if !models.IsKnownRole(models.Role(role)) {
+		return nil, errors.New("invalid role")
+	}
 
 	// Check if email is already in use by another user
 	existing, _ := s.repo.FindUserByEmail(email)

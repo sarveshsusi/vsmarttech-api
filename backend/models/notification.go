@@ -37,6 +37,12 @@ const (
 	NotificationTypeAdminExpiryAlert NotificationType = "admin_expiry_alert"
 
 	NotificationTypeFeedbackReceived NotificationType = "feedback_received"
+
+	NotificationTypeTourAdvanceSubmitted     NotificationType = "tour_advance_submitted"
+	NotificationTypeTourAdvanceApproved      NotificationType = "tour_advance_approved"
+	NotificationTypeTourAdvanceRejected      NotificationType = "tour_advance_rejected"
+	NotificationTypeTourAdvanceBillSubmitted NotificationType = "tour_advance_bill_submitted"
+	NotificationTypeTourAdvanceProcessed     NotificationType = "tour_advance_processed"
 )
 
 /* =========================

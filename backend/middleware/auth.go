@@ -15,7 +15,9 @@ import (
 
 /*
 =====================
- Context Keys
+
+	Context Keys
+
 =====================
 */
 const (
@@ -26,9 +28,12 @@ const (
 
 /*
 =====================
- Auth Middleware
+
+	Auth Middleware
+
 =====================
- Validates JWT access token and rejects inactive accounts.
+
+	Validates JWT access token and rejects inactive accounts.
 */
 func AuthMiddleware(cfg *config.Config, db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -95,7 +100,9 @@ func AuthMiddleware(cfg *config.Config, db *gorm.DB) gin.HandlerFunc {
 
 /*
 =====================
- Role-Based Access
+
+	Role-Based Access
+
 =====================
 */
 func RequireRole(roles ...models.Role) gin.HandlerFunc {
@@ -131,9 +138,17 @@ func RequireRole(roles ...models.Role) gin.HandlerFunc {
 
 /*
 =====================
- Admin Shortcut
+
+	Admin Shortcut
+
 =====================
 */
 func RequireAdmin() gin.HandlerFunc {
 	return RequireRole(models.RoleAdmin)
+}
+
+// RequireAdminAccess allows the admin shell (admin and super_admin).
+// Tour Advance process stays RequireRole(RoleAdmin). Approval stays super_admin only.
+func RequireAdminAccess() gin.HandlerFunc {
+	return RequireRole(models.RoleAdmin, models.RoleSuperAdmin)
 }

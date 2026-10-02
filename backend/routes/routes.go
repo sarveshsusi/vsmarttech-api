@@ -16,6 +16,7 @@ import (
 	modcrm "rbac/internal/modules/crm"
 	modnotify "rbac/internal/modules/notify"
 	modtickets "rbac/internal/modules/tickets"
+	modtour "rbac/internal/modules/touradvance"
 )
 
 func SetupRoutes(
@@ -44,6 +45,7 @@ func SetupRoutes(
 	amcHandler *handler.AMCAssignmentHandler,
 	auditHandler *handler.AuditHandler,
 	assetHandler *handler.AssetHandler,
+	tourAdvanceHandler *handler.TourAdvanceHandler,
 ) {
 	// Security middleware is applied once in bootstrap (CORS + headers + audit).
 
@@ -108,7 +110,7 @@ func SetupRoutes(
 		amcHandlers := modamc.Handlers{Contract: contractHandler, AMC: amcHandler}
 
 		admin := protected.Group("/admin")
-		admin.Use(middleware.RequireRole(models.RoleAdmin))
+		admin.Use(middleware.RequireRole(models.RoleAdmin, models.RoleSuperAdmin))
 		{
 			modauth.RegisterAdminUsers(admin, authHandler)
 			modcrm.RegisterAdmin(admin, crmHandlers)
@@ -116,7 +118,12 @@ func SetupRoutes(
 			modtickets.RegisterAdmin(admin, ticketHandlers)
 			modtickets.RegisterAdminFeedback(admin, ticketHandlers)
 			admin.GET("/audit-logs", auditHandler.List)
+			modtour.RegisterAdmin(admin, tourAdvanceHandler)
 		}
+
+		adminOnly := protected.Group("/admin")
+		adminOnly.Use(middleware.RequireRole(models.RoleAdmin))
+		modtour.RegisterProcess(adminOnly, tourAdvanceHandler)
 
 		support := protected.Group("/support")
 		support.Use(middleware.RequireRole(models.RoleSupport))
@@ -124,6 +131,7 @@ func SetupRoutes(
 			modcrm.RegisterSupport(support, crmHandlers)
 			modtickets.RegisterSupport(support, ticketHandlers)
 			modamc.RegisterSupport(support, amcHandlers)
+			modtour.RegisterSupport(support, tourAdvanceHandler)
 		}
 
 		customer := protected.Group("/customer")

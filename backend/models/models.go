@@ -13,10 +13,26 @@ import (
 type Role string
 
 const (
-	RoleAdmin    Role = "admin"
-	RoleSupport  Role = "support"
-	RoleCustomer Role = "customer"
+	RoleAdmin      Role = "admin"
+	RoleSuperAdmin Role = "super_admin"
+	RoleSupport    Role = "support"
+	RoleCustomer   Role = "customer"
 )
+
+// HasAdminAccess is true for users who use the admin shell.
+// Tour Advance approval is still limited to RoleSuperAdmin, and processing to RoleAdmin.
+func HasAdminAccess(role Role) bool {
+	return role == RoleAdmin || role == RoleSuperAdmin
+}
+
+func IsKnownRole(role Role) bool {
+	switch role {
+	case RoleAdmin, RoleSuperAdmin, RoleSupport, RoleCustomer:
+		return true
+	default:
+		return false
+	}
+}
 
 /* =========================
    USER

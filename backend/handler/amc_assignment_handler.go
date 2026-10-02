@@ -129,9 +129,10 @@ func (h *AMCAssignmentHandler) authorizeAssignmentAccess(c *gin.Context, assignm
 	role, _ := roleValue.(models.Role)
 	userID := c.MustGet("user_id").(uuid.UUID)
 
-	switch role {
-	case models.RoleAdmin:
+	if models.HasAdminAccess(role) {
 		return true
+	}
+	switch role {
 	case models.RoleSupport:
 		engineer, err := h.supportEngineerRepo.GetByUserID(userID)
 		if err != nil || engineer.ID != assignment.SupportEngineerID {

@@ -173,6 +173,34 @@ func (s *NotificationService) CreateTicketNotification(
 	return nil
 }
 
+// CreateInApp stores an in-app notification without a ticket webhook.
+func (s *NotificationService) CreateInApp(
+	userID uuid.UUID,
+	notificationType models.NotificationType,
+	title string,
+	message string,
+	metadata string,
+) error {
+	if metadata == "" {
+		metadata = "{}"
+	}
+	notification := &models.Notification{
+		ID:       uuid.New(),
+		UserID:   userID,
+		Type:     notificationType,
+		Title:    title,
+		Message:  message,
+		IsRead:   false,
+		Metadata: metadata,
+	}
+	if err := s.notifRepo.Create(notification); err != nil {
+		log.Printf("[NOTIFICATION_ERROR] Failed to create notification: %v", err)
+		return err
+	}
+	s.maybeSendPush(notification)
+	return nil
+}
+
 /* =========================
    WEB PUSH
 ========================= */
@@ -278,6 +306,13 @@ func (s *NotificationService) pushDeepLink(n *models.Notification) string {
 		return "/customer/solutions"
 	case models.NotificationTypeAdminExpiryAlert:
 		return "/admin/contracts/amc"
+	case models.NotificationTypeTourAdvanceSubmitted,
+		models.NotificationTypeTourAdvanceBillSubmitted:
+		return "/admin/tour-advances"
+	case models.NotificationTypeTourAdvanceApproved,
+		models.NotificationTypeTourAdvanceRejected,
+		models.NotificationTypeTourAdvanceProcessed:
+		return "/support/tour-advances"
 	}
 	if n.TicketID != nil && *n.TicketID != "" {
 		return "/admin/tickets/details?id=" + url.QueryEscape(*n.TicketID)

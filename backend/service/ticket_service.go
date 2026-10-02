@@ -1495,7 +1495,7 @@ func (s *TicketService) ListTicketComments(ticketID string, userID uuid.UUID, ro
 	if err := s.assertCommentAccess(ticket, userID, role); err != nil {
 		return nil, err
 	}
-	includeInternal := role == models.RoleAdmin || role == models.RoleSupport
+	includeInternal := models.HasAdminAccess(role) || role == models.RoleSupport
 	return s.ticketRepo.ListComments(ticketID, includeInternal)
 }
 
@@ -1522,7 +1522,7 @@ func (s *TicketService) AddTicketComment(
 		return nil, err
 	}
 
-	if isInternal && role != models.RoleAdmin && role != models.RoleSupport {
+	if isInternal && !models.HasAdminAccess(role) && role != models.RoleSupport {
 		return nil, errors.New("not allowed to post internal notes")
 	}
 	if role == models.RoleCustomer {
@@ -1544,7 +1544,7 @@ func (s *TicketService) AddTicketComment(
 
 // assertCommentAccess: admin any ticket; support only if assigned engineer.
 func (s *TicketService) assertCommentAccess(ticket *models.Ticket, userID uuid.UUID, role models.Role) error {
-	if role == models.RoleAdmin {
+	if models.HasAdminAccess(role) {
 		return nil
 	}
 	if role == models.RoleSupport {

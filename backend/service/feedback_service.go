@@ -229,9 +229,10 @@ func (s *FeedbackService) GetByTicketID(userID uuid.UUID, role models.Role, tick
 }
 
 func (s *FeedbackService) authorizeTicketAccess(userID uuid.UUID, role models.Role, ticket *models.Ticket) error {
-	switch role {
-	case models.RoleAdmin:
+	if models.HasAdminAccess(role) {
 		return nil
+	}
+	switch role {
 	case models.RoleCustomer:
 		customer, err := s.customerRepo.GetByUserID(userID)
 		if err != nil || customer.ID != ticket.CustomerID {
@@ -266,7 +267,7 @@ func (s *FeedbackService) GetEngineerFeedback(requesterID uuid.UUID, role models
 		if err != nil || eng.ID != engineerID {
 			return nil, errors.New("access denied")
 		}
-	} else if role != models.RoleAdmin {
+	} else if !models.HasAdminAccess(role) {
 		return nil, errors.New("access denied")
 	}
 
@@ -314,9 +315,10 @@ func (s *FeedbackService) GetEngineerFeedback(requesterID uuid.UUID, role models
 }
 
 func (s *FeedbackService) ListPending(requesterID uuid.UUID, role models.Role) ([]models.TicketFeedback, error) {
-	switch role {
-	case models.RoleAdmin:
+	if models.HasAdminAccess(role) {
 		return s.repo.ListPending(nil, 200)
+	}
+	switch role {
 	case models.RoleSupport:
 		eng, err := s.supportEngineerRepo.GetByUserID(requesterID)
 		if err != nil {
