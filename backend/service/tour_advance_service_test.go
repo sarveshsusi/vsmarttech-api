@@ -76,10 +76,14 @@ func seedTour(t *testing.T, db *gorm.DB) tourFixture {
 	}
 	fx.ticketA = models.Ticket{ID: "VS/10/26/1", CustomerID: fx.siteA.ID, Title: "Pump", Status: models.StatusOpen, CreatedBy: fx.admin.ID, CreatedAt: time.Now()}
 	fx.ticketB = models.Ticket{ID: "VS/10/26/2", CustomerID: fx.siteB.ID, Title: "Motor", Status: models.StatusOpen, CreatedBy: fx.admin.ID, CreatedAt: time.Now()}
+	closed := models.Ticket{ID: "VS/10/26/3", CustomerID: fx.siteA.ID, Title: "Done", Status: models.StatusClosed, CreatedBy: fx.admin.ID, CreatedAt: time.Now()}
 	if err := db.Create(&fx.ticketA).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Create(&fx.ticketB).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&closed).Error; err != nil {
 		t.Fatal(err)
 	}
 	return fx
@@ -148,6 +152,11 @@ func TestTourAdvanceCreateValidation(t *testing.T) {
 	wrongTicket.TicketID = fx.ticketB.ID
 	_, err = svc.Create(fx.engineer.ID, models.RoleSupport, wrongTicket)
 	assertRule(t, err, "ticket does not belong to the selected customer")
+
+	closedTicket := serviceMissing
+	closedTicket.TicketID = "VS/10/26/3"
+	_, err = svc.Create(fx.engineer.ID, models.RoleSupport, closedTicket)
+	assertRule(t, err, "closed tickets cannot be selected")
 
 	badPersons := installInput(fx.siteA.ID)
 	badPersons.PersonsTravelling = 0
