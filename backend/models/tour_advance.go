@@ -58,8 +58,11 @@ type TourAdvanceRequest struct {
 	TicketID *string      `gorm:"type:varchar(20);index" json:"ticket_id,omitempty"`
 	Ticket   *Ticket      `gorm:"foreignKey:TicketID;constraint:OnDelete:RESTRICT" json:"-"`
 
-	PersonsTravelling int `gorm:"not null" json:"persons_travelling"`
-	DaysPlanned       int `gorm:"not null" json:"days_planned"`
+	PersonsTravelling int     `gorm:"not null" json:"persons_travelling"`
+	Travellers        string  `gorm:"type:jsonb" json:"-"`
+	DaysPlanned       int     `gorm:"not null" json:"days_planned"`
+	TravelFrom        *string `gorm:"type:varchar(10)" json:"travel_from,omitempty"`
+	TravelTo          *string `gorm:"type:varchar(10)" json:"travel_to,omitempty"`
 
 	FoodExpense          decimal.Decimal `gorm:"type:numeric(12,2);not null" json:"food_expense"`
 	LocalExpense         decimal.Decimal `gorm:"type:numeric(12,2);not null" json:"local_expense"`

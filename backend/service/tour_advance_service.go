@@ -37,7 +37,10 @@ type CreateTourAdvanceInput struct {
 	PONumber             string
 	TicketID             string
 	PersonsTravelling    int
+	Travellers           []TourTravellerInput
 	DaysPlanned          int
+	TravelFrom           string
+	TravelTo             string
 	FoodExpense          string
 	LocalExpense         string
 	AccommodationExpense string
@@ -63,7 +66,10 @@ type TourAdvanceView struct {
 	PONumber             *string                `json:"po_number"`
 	TicketID             *string                `json:"ticket_id"`
 	PersonsTravelling    int                    `json:"persons_travelling"`
+	Travellers           []TourTravellerView    `json:"travellers"`
 	DaysPlanned          int                    `json:"days_planned"`
+	TravelFrom           *string                `json:"travel_from,omitempty"`
+	TravelTo             *string                `json:"travel_to,omitempty"`
 	FoodExpense          string                 `json:"food_expense"`
 	LocalExpense         string                 `json:"local_expense"`
 	AccommodationExpense string                 `json:"accommodation_expense"`
@@ -102,6 +108,17 @@ type SiteOption struct {
 	Plant    string    `json:"plant"`
 	Name     string    `json:"name"`
 	Label    string    `json:"label"`
+}
+
+type TourTravellerInput struct {
+	EngineerID string
+	Name       string
+}
+
+type TourTravellerView struct {
+	EngineerID string `json:"engineer_id,omitempty"`
+	Name       string `json:"name"`
+	Kind       string `json:"kind"`
 }
 
 type TicketOption struct {
@@ -187,6 +204,14 @@ func (s *TourAdvanceService) Create(actor uuid.UUID, role models.Role, in Create
 	if err := domain.ValidateTourCreate(rules); err != nil {
 		return nil, err
 	}
+	travellers, err := s.resolveTravellers(in.Travellers, in.PersonsTravelling)
+	if err != nil {
+		return nil, err
+	}
+	travelFrom, travelTo, err := travelWindow(in.TravelFrom, in.TravelTo, in.DaysPlanned)
+	if err != nil {
+		return nil, err
+	}
 	requested, err := domain.RequestedAmount(expenses)
 	if err != nil {
 		return nil, err
@@ -210,7 +235,10 @@ func (s *TourAdvanceService) Create(actor uuid.UUID, role models.Role, in Create
 		PONumber:             poPtr,
 		TicketID:             ticketPtr,
 		PersonsTravelling:    in.PersonsTravelling,
+		Travellers:           travellers,
 		DaysPlanned:          in.DaysPlanned,
+		TravelFrom:           travelFrom,
+		TravelTo:             travelTo,
 		FoodExpense:          food,
 		LocalExpense:         local,
 		AccommodationExpense: accommodation,
@@ -756,7 +784,10 @@ func toTourView(row *models.TourAdvanceRequest) TourAdvanceView {
 		PONumber:             row.PONumber,
 		TicketID:             row.TicketID,
 		PersonsTravelling:    row.PersonsTravelling,
+		Travellers:           decodeTravellers(row.Travellers),
 		DaysPlanned:          row.DaysPlanned,
+		TravelFrom:           row.TravelFrom,
+		TravelTo:             row.TravelTo,
 		FoodExpense:          row.FoodExpense.StringFixed(2),
 		LocalExpense:         row.LocalExpense.StringFixed(2),
 		AccommodationExpense: row.AccommodationExpense.StringFixed(2),
@@ -838,6 +869,92 @@ func knownTourStatus(status string) bool {
 	default:
 		return false
 	}
+}
+
+func (s *TourAdvanceService) resolveTravellers(in []TourTravellerInput, count int) (string, error) {
+	if count > 30 {
+		return "", &domain.RuleError{Msg: "too many persons travelling"}
+	}
+	if len(in) != count {
+		return "", &domain.RuleError{Msg: "select every person travelling"}
+	}
+	seen := map[string]struct{}{}
+	out := make([]TourTravellerView, 0, len(in))
+	for _, person := range in {
+		engineerID := strings.TrimSpace(person.EngineerID)
+		name := strings.TrimSpace(person.Name)
+		if engineerID != "" {
+			id, err := uuid.Parse(engineerID)
+			if err != nil {
+				return "", &domain.RuleError{Msg: "support engineer is invalid"}
+			}
+			if _, ok := seen[engineerID]; ok {
+				return "", &domain.RuleError{Msg: "each support engineer can be selected once"}
+			}
+			seen[engineerID] = struct{}{}
+			var engineer models.SupportEngineer
+			err = s.db.Preload("User").Where("id = ? AND is_active = ?", id, true).First(&engineer).Error
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return "", &domain.RuleError{Msg: "support engineer not found"}
+			}
+			if err != nil {
+				return "", err
+			}
+			display := strings.TrimSpace(engineer.User.Name)
+			if display == "" {
+				return "", &domain.RuleError{Msg: "support engineer not found"}
+			}
+			out = append(out, TourTravellerView{EngineerID: engineerID, Name: display, Kind: "engineer"})
+			continue
+		}
+		if name == "" {
+			return "", &domain.RuleError{Msg: "enter a name for each other traveller"}
+		}
+		if len(name) > 100 {
+			return "", &domain.RuleError{Msg: "traveller name is too long"}
+		}
+		out = append(out, TourTravellerView{Name: name, Kind: "other"})
+	}
+	raw, err := json.Marshal(out)
+	if err != nil {
+		return "", err
+	}
+	return string(raw), nil
+}
+
+func travelWindow(from, to string, days int) (*string, *string, error) {
+	from = strings.TrimSpace(from)
+	to = strings.TrimSpace(to)
+	if from == "" && to == "" {
+		return nil, nil, nil
+	}
+	if from == "" || to == "" {
+		return nil, nil, &domain.RuleError{Msg: "select the travel dates"}
+	}
+	start, err := time.Parse("2006-01-02", from)
+	if err != nil {
+		return nil, nil, &domain.RuleError{Msg: "select the travel dates"}
+	}
+	end, err := time.Parse("2006-01-02", to)
+	if err != nil {
+		return nil, nil, &domain.RuleError{Msg: "select the travel dates"}
+	}
+	span := int(end.Sub(start).Hours()/24) + 1
+	if span <= 0 || span != days {
+		return nil, nil, &domain.RuleError{Msg: "days planned must match the selected dates"}
+	}
+	return &from, &to, nil
+}
+
+func decodeTravellers(raw string) []TourTravellerView {
+	if strings.TrimSpace(raw) == "" {
+		return []TourTravellerView{}
+	}
+	var rows []TourTravellerView
+	if err := json.Unmarshal([]byte(raw), &rows); err != nil || rows == nil {
+		return []TourTravellerView{}
+	}
+	return rows
 }
 
 func tourMeta(row *models.TourAdvanceRequest) string {

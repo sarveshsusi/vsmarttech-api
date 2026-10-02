@@ -113,6 +113,7 @@ func installInput(siteID uuid.UUID) CreateTourAdvanceInput {
 	return CreateTourAdvanceInput{
 		CustomerID: siteID, WorkType: "INSTALLATION", PONumber: "THPG26/263410240",
 		PersonsTravelling: 3, DaysPlanned: 3,
+		Travellers:  []TourTravellerInput{{Name: "One"}, {Name: "Two"}, {Name: "Three"}},
 		FoodExpense: "2700", LocalExpense: "1000", AccommodationExpense: "4500",
 		TravelMode: "CAR", TravelExpense: "2000",
 	}
@@ -177,6 +178,37 @@ func TestTourAdvanceCreateValidation(t *testing.T) {
 	if !errors.Is(err, ErrTourForbidden) {
 		t.Fatalf("admin create: %v", err)
 	}
+
+	var engineer models.SupportEngineer
+	if err := db.Where("user_id = ?", fx.engineer.ID).First(&engineer).Error; err != nil {
+		t.Fatal(err)
+	}
+	withPeople := installInput(fx.siteA.ID)
+	withPeople.PersonsTravelling = 2
+	withPeople.Travellers = []TourTravellerInput{
+		{EngineerID: engineer.ID.String()},
+		{Name: "Site helper"},
+	}
+	withPeople.TravelFrom = "2026-10-02"
+	withPeople.TravelTo = "2026-10-04"
+	created, err := svc.Create(fx.engineer.ID, models.RoleSupport, withPeople)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(created.Travellers) != 2 || created.Travellers[0].Kind != "engineer" || created.Travellers[0].Name != "Sarvesh" {
+		t.Fatalf("travellers %#v", created.Travellers)
+	}
+	if created.Travellers[1].Kind != "other" || created.Travellers[1].Name != "Site helper" {
+		t.Fatalf("other traveller %#v", created.Travellers[1])
+	}
+	if created.TravelFrom == nil || *created.TravelFrom != "2026-10-02" || created.DaysPlanned != 3 {
+		t.Fatalf("dates from=%v days=%d", created.TravelFrom, created.DaysPlanned)
+	}
+
+	mismatch := installInput(fx.siteA.ID)
+	mismatch.Travellers = []TourTravellerInput{{Name: "Only one"}}
+	_, err = svc.Create(fx.engineer.ID, models.RoleSupport, mismatch)
+	assertRule(t, err, "select every person travelling")
 }
 
 func TestTourAdvanceWorkflow(t *testing.T) {
@@ -479,7 +511,10 @@ CREATE TABLE tour_advance_requests (
   po_number text,
   ticket_id text,
   persons_travelling integer,
+  travellers text,
   days_planned integer,
+  travel_from text,
+  travel_to text,
   food_expense numeric,
   local_expense numeric,
   accommodation_expense numeric,

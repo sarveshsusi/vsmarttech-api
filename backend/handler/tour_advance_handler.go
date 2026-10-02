@@ -24,17 +24,25 @@ func NewTourAdvanceHandler(service *service.TourAdvanceService) *TourAdvanceHand
 }
 
 type createTourAdvanceBody struct {
-	CustomerID           uuid.UUID `json:"customer_id" binding:"required"`
-	WorkType             string    `json:"work_type" binding:"required"`
-	PONumber             string    `json:"po_number"`
-	TicketID             string    `json:"ticket_id"`
-	PersonsTravelling    int       `json:"persons_travelling"`
-	DaysPlanned          int       `json:"days_planned"`
-	FoodExpense          string    `json:"food_expense" binding:"required"`
-	LocalExpense         string    `json:"local_expense" binding:"required"`
-	AccommodationExpense string    `json:"accommodation_expense" binding:"required"`
-	TravelMode           string    `json:"travel_mode" binding:"required"`
-	TravelExpense        string    `json:"travel_expense" binding:"required"`
+	CustomerID           uuid.UUID           `json:"customer_id" binding:"required"`
+	WorkType             string              `json:"work_type" binding:"required"`
+	PONumber             string              `json:"po_number"`
+	TicketID             string              `json:"ticket_id"`
+	PersonsTravelling    int                 `json:"persons_travelling"`
+	Travellers           []tourTravellerBody `json:"travellers"`
+	DaysPlanned          int                 `json:"days_planned"`
+	TravelFrom           string              `json:"travel_from"`
+	TravelTo             string              `json:"travel_to"`
+	FoodExpense          string              `json:"food_expense" binding:"required"`
+	LocalExpense         string              `json:"local_expense" binding:"required"`
+	AccommodationExpense string              `json:"accommodation_expense" binding:"required"`
+	TravelMode           string              `json:"travel_mode" binding:"required"`
+	TravelExpense        string              `json:"travel_expense" binding:"required"`
+}
+
+type tourTravellerBody struct {
+	EngineerID string `json:"engineer_id"`
+	Name       string `json:"name"`
 }
 
 type approveTourAdvanceBody struct {
@@ -59,7 +67,10 @@ func (h *TourAdvanceHandler) Create(c *gin.Context) {
 		PONumber:             body.PONumber,
 		TicketID:             body.TicketID,
 		PersonsTravelling:    body.PersonsTravelling,
+		Travellers:           tourTravellerInputs(body.Travellers),
 		DaysPlanned:          body.DaysPlanned,
+		TravelFrom:           body.TravelFrom,
+		TravelTo:             body.TravelTo,
 		FoodExpense:          body.FoodExpense,
 		LocalExpense:         body.LocalExpense,
 		AccommodationExpense: body.AccommodationExpense,
@@ -211,6 +222,17 @@ func (h *TourAdvanceHandler) LookupTickets(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, rows)
+}
+
+func tourTravellerInputs(rows []tourTravellerBody) []service.TourTravellerInput {
+	out := make([]service.TourTravellerInput, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, service.TourTravellerInput{
+			EngineerID: row.EngineerID,
+			Name:       row.Name,
+		})
+	}
+	return out
 }
 
 func tourActor(c *gin.Context) (uuid.UUID, models.Role) {
