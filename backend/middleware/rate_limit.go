@@ -39,7 +39,6 @@ func RateLimit(max int) gin.HandlerFunc {
 		key := rateLimitKey(c)
 
 		mu.Lock()
-		defer mu.Unlock()
 
 		now := time.Now()
 		req, exists := clients[key]
@@ -49,6 +48,7 @@ func RateLimit(max int) gin.HandlerFunc {
 				count:     1,
 				resetTime: now.Add(time.Minute),
 			}
+			mu.Unlock()
 			c.Next()
 			return
 		}
@@ -60,6 +60,7 @@ func RateLimit(max int) gin.HandlerFunc {
 			if retryAfter < 1 {
 				retryAfter = 1
 			}
+			mu.Unlock()
 			c.Header("Retry-After", fmt.Sprintf("%d", retryAfter))
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
 				"error":       "rate_limit_exceeded",
@@ -68,6 +69,7 @@ func RateLimit(max int) gin.HandlerFunc {
 			return
 		}
 
+		mu.Unlock()
 		c.Next()
 	}
 }
