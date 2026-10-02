@@ -15,6 +15,7 @@ func RegisterSupport(support *gin.RouterGroup, h *handler.TourAdvanceHandler) {
 	support.GET("/tour-advances", h.List)
 	support.POST("/tour-advances", h.Create)
 	support.GET("/tour-advances/:id", h.Get)
+	support.DELETE("/tour-advances/:id", h.Delete)
 	support.POST("/tour-advances/:id/bill-submitted", h.BillSubmitted)
 }
 

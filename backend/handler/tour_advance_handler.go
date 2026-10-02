@@ -135,6 +135,19 @@ func (h *TourAdvanceHandler) Reject(c *gin.Context) {
 	c.JSON(http.StatusOK, view)
 }
 
+func (h *TourAdvanceHandler) Delete(c *gin.Context) {
+	id, ok := tourID(c)
+	if !ok {
+		return
+	}
+	actor, role := tourActor(c)
+	if err := h.service.Delete(actor, role, id); err != nil {
+		writeTourError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
 func (h *TourAdvanceHandler) BillSubmitted(c *gin.Context) {
 	id, ok := tourID(c)
 	if !ok {

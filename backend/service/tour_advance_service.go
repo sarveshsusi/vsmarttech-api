@@ -410,6 +410,46 @@ func (s *TourAdvanceService) Reject(actor uuid.UUID, role models.Role, id uuid.U
 	return view, nil
 }
 
+func (s *TourAdvanceService) Delete(actor uuid.UUID, role models.Role, id uuid.UUID) error {
+	if role != models.RoleSupport {
+		return ErrTourForbidden
+	}
+	row, err := s.load(id)
+	if err != nil {
+		return err
+	}
+	if row.Engineer == nil || row.Engineer.UserID != actor {
+		return ErrTourNotFound
+	}
+
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where(
+			"type IN ? AND metadata LIKE ?",
+			[]models.NotificationType{
+				models.NotificationTypeTourAdvanceSubmitted,
+				models.NotificationTypeTourAdvanceApproved,
+				models.NotificationTypeTourAdvanceRejected,
+				models.NotificationTypeTourAdvanceBillSubmitted,
+				models.NotificationTypeTourAdvanceProcessed,
+			},
+			"%"+id.String()+"%",
+		).Delete(&models.Notification{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("tour_advance_request_id = ?", id).Delete(&models.TourAdvanceEvent{}).Error; err != nil {
+			return err
+		}
+		res := tx.Where("id = ?", id).Delete(&models.TourAdvanceRequest{})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return ErrTourNotFound
+		}
+		return nil
+	})
+}
+
 func (s *TourAdvanceService) MarkBillSubmitted(actor uuid.UUID, role models.Role, id uuid.UUID) (*TourAdvanceView, error) {
 	if role != models.RoleSupport {
 		return nil, ErrTourForbidden

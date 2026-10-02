@@ -334,6 +334,60 @@ func TestTourAdvanceRejectAndTicketFilter(t *testing.T) {
 	}
 }
 
+func TestTourAdvanceDeleteRemovesRequestEventsAndNotifications(t *testing.T) {
+	db := openTourDB(t)
+	fx := seedTour(t, db)
+	svc := NewTourAdvanceService(db, nil)
+
+	created, err := svc.Create(fx.engineer.ID, models.RoleSupport, installInput(fx.siteA.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := created.ID
+	noteID := uuid.New()
+	if err := db.Exec(
+		`INSERT INTO notifications (id, user_id, type, title, message, metadata, is_read, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		noteID.String(), fx.superAdmin.ID.String(),
+		string(models.NotificationTypeTourAdvanceSubmitted),
+		"New tour advance", "TR submitted",
+		`{"tour_advance_id":"`+id.String()+`","request_number":"`+created.RequestNumber+`"}`,
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := svc.Delete(fx.otherEngineer.ID, models.RoleSupport, id); !errors.Is(err, ErrTourNotFound) {
+		t.Fatalf("other engineer: %v", err)
+	}
+	if err := svc.Delete(fx.admin.ID, models.RoleAdmin, id); !errors.Is(err, ErrTourForbidden) {
+		t.Fatalf("admin: %v", err)
+	}
+	if err := svc.Delete(fx.engineer.ID, models.RoleSupport, id); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := db.First(&models.TourAdvanceRequest{}, "id = ?", id).Error; !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("request still present: %v", err)
+	}
+	var events int64
+	if err := db.Model(&models.TourAdvanceEvent{}).Where("tour_advance_request_id = ?", id).Count(&events).Error; err != nil {
+		t.Fatal(err)
+	}
+	if events != 0 {
+		t.Fatalf("events left: %d", events)
+	}
+	var notes int64
+	if err := db.Model(&models.Notification{}).Where("id = ?", noteID).Count(&notes).Error; err != nil {
+		t.Fatal(err)
+	}
+	if notes != 0 {
+		t.Fatalf("notifications left: %d", notes)
+	}
+	if _, err := svc.Get(fx.engineer.ID, models.RoleSupport, id); !errors.Is(err, ErrTourNotFound) {
+		t.Fatalf("get after delete: %v", err)
+	}
+}
+
 const tourTestSchema = `
 CREATE TABLE users (
   id text primary key,
@@ -445,6 +499,17 @@ CREATE TABLE tour_advance_events (
   actor_user_id text,
   note text,
   created_at datetime
+);
+CREATE TABLE notifications (
+  id text primary key,
+  user_id text,
+  type text,
+  title text,
+  message text,
+  metadata text,
+  is_read integer,
+  created_at datetime,
+  updated_at datetime
 );
 `
 
