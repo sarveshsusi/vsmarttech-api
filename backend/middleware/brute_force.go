@@ -1,98 +1,153 @@
 package middleware
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
+const (
+	bruteForceMaxAttempts = 5
+	bruteForceWindow      = 15 * time.Minute
+	bruteForceLockFor     = 15 * time.Minute
+)
+
 type failedAttempt struct {
-	count     int
-	lastTry   time.Time
+	tries       []time.Time
 	lockedUntil *time.Time
 }
 
 var (
 	bruteForceAttempts = make(map[string]*failedAttempt)
 	bruteForceLocker   sync.Mutex
+	bruteForceCleanup  sync.Once
 )
 
-// BruteForceGuard tracks failed login attempts and locks accounts temporarily
-func BruteForceGuard() gin.HandlerFunc {
-	// Cleanup old entries every 10 minutes
-	go func() {
-		for {
-			time.Sleep(10 * time.Minute)
-			bruteForceLocker.Lock()
-			now := time.Now()
-			for key, attempt := range bruteForceAttempts {
-				// Remove entries older than 1 hour
-				if now.Sub(attempt.lastTry) > time.Hour {
-					delete(bruteForceAttempts, key)
+func startBruteForceCleanup() {
+	bruteForceCleanup.Do(func() {
+		go func() {
+			for {
+				time.Sleep(10 * time.Minute)
+				bruteForceLocker.Lock()
+				now := time.Now()
+				for key, attempt := range bruteForceAttempts {
+					if attempt.lockedUntil != nil && now.Before(*attempt.lockedUntil) {
+						continue
+					}
+					if len(attempt.tries) == 0 || now.Sub(attempt.tries[len(attempt.tries)-1]) > time.Hour {
+						delete(bruteForceAttempts, key)
+					}
 				}
+				bruteForceLocker.Unlock()
 			}
-			bruteForceLocker.Unlock()
+		}()
+	})
+}
+
+func pruneTries(tries []time.Time, now time.Time) []time.Time {
+	cutoff := now.Add(-bruteForceWindow)
+	kept := tries[:0]
+	for _, t := range tries {
+		if t.After(cutoff) {
+			kept = append(kept, t)
 		}
-	}()
+	}
+	return kept
+}
+
+func peekLoginEmail(c *gin.Context) string {
+	body, err := c.GetRawData()
+	if err != nil || len(body) == 0 {
+		return ""
+	}
+	// Restore body so the login handler can still bind JSON.
+	c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
+
+	var payload struct {
+		Email string `json:"email"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(payload.Email))
+}
+
+func bruteForceKey(c *gin.Context) string {
+	ip := c.ClientIP()
+	email := peekLoginEmail(c)
+	if email == "" {
+		return "ip:" + ip
+	}
+	return "ip:" + ip + "|email:" + email
+}
+
+// BruteForceGuard tracks failed login attempts and locks the IP+email pair temporarily.
+func BruteForceGuard() gin.HandlerFunc {
+	startBruteForceCleanup()
 
 	return func(c *gin.Context) {
-		ip := c.ClientIP()
+		key := bruteForceKey(c)
+		now := time.Now()
 
 		bruteForceLocker.Lock()
-		attempt, exists := bruteForceAttempts[ip]
-		
-		// Check if IP is currently locked
-		if exists && attempt.lockedUntil != nil && time.Now().Before(*attempt.lockedUntil) {
-			remaining := int(attempt.lockedUntil.Sub(time.Now()).Seconds())
+		attempt, exists := bruteForceAttempts[key]
+
+		if exists && attempt.lockedUntil != nil && now.Before(*attempt.lockedUntil) {
+			remaining := int(attempt.lockedUntil.Sub(now).Seconds())
+			if remaining < 1 {
+				remaining = 1
+			}
 			bruteForceLocker.Unlock()
+			c.Header("Retry-After", fmt.Sprintf("%d", remaining))
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
-				"error": "too_many_failed_attempts",
-				"message": "Account temporarily locked due to multiple failed login attempts",
+				"error":               "too_many_failed_attempts",
+				"message":             "Account temporarily locked due to multiple failed login attempts.",
 				"retry_after_seconds": remaining,
 			})
 			return
 		}
 
-		// If lock has expired, reset the attempt
-		if exists && attempt.lockedUntil != nil && time.Now().After(*attempt.lockedUntil) {
-			delete(bruteForceAttempts, ip)
+		if exists && attempt.lockedUntil != nil && !now.Before(*attempt.lockedUntil) {
+			delete(bruteForceAttempts, key)
 		}
-		
 		bruteForceLocker.Unlock()
 
-		// Continue to handler
 		c.Next()
 
-		// After handler completes, check if login failed
 		status := c.Writer.Status()
-		
-		// Login failed (401 Unauthorized)
 		if status == http.StatusUnauthorized {
 			bruteForceLocker.Lock()
 			defer bruteForceLocker.Unlock()
 
-			attempt, exists := bruteForceAttempts[ip]
+			now := time.Now()
+			attempt, exists := bruteForceAttempts[key]
 			if !exists {
-				bruteForceAttempts[ip] = &failedAttempt{
-					count:   1,
-					lastTry: time.Now(),
+				bruteForceAttempts[key] = &failedAttempt{
+					tries: []time.Time{now},
 				}
-			} else {
-				attempt.count++
-				attempt.lastTry = time.Now()
-
-				// Lock account after 5 failed attempts within 15 minutes
-				if attempt.count >= 5 {
-					lockUntil := time.Now().Add(15 * time.Minute)
-					attempt.lockedUntil = &lockUntil
-				}
+				return
 			}
-		} else if status == http.StatusOK {
-			// Login successful - reset failed attempts for this IP
+
+			attempt.tries = append(pruneTries(attempt.tries, now), now)
+			attempt.lockedUntil = nil
+
+			if len(attempt.tries) >= bruteForceMaxAttempts {
+				lockUntil := now.Add(bruteForceLockFor)
+				attempt.lockedUntil = &lockUntil
+			}
+			return
+		}
+
+		if status == http.StatusOK || status == http.StatusAccepted {
 			bruteForceLocker.Lock()
-			delete(bruteForceAttempts, ip)
+			delete(bruteForceAttempts, key)
 			bruteForceLocker.Unlock()
 		}
 	}
