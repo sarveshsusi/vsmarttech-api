@@ -18,8 +18,6 @@ func RegisterSupport(support *gin.RouterGroup, h *handler.TourAdvanceHandler) {
 	support.POST("/tour-advances", h.Create)
 	support.GET("/tour-advances/:id", h.Get)
 	support.DELETE("/tour-advances/:id", h.Delete)
-	support.POST("/tour-advances/:id/bill-submitted", h.BillSubmitted)
-	support.POST("/tour-advances/:id/expenses/:expenseId", h.AmendExpense)
 	support.POST("/tour-advances/:id/additional", h.CreateAdditional)
 }
 
@@ -41,6 +39,8 @@ func RegisterAdmin(admin *gin.RouterGroup, h *handler.TourAdvanceHandler) {
 
 func RegisterProcess(adminOnly *gin.RouterGroup, h *handler.TourAdvanceHandler) {
 	adminOnly.POST("/tour-advances/:id/process", h.Process)
+	adminOnly.POST("/tour-advances/:id/expenses", h.BillSubmitted)
+	adminOnly.POST("/tour-advances/:id/expenses/:expenseId", h.AmendExpense)
 	adminOnly.POST("/tour-advances/:id/expenses/:expenseId/review", h.ReviewExpense)
 	adminOnly.GET("/tour-advances/policy", h.GetPolicy)
 	adminOnly.PUT("/tour-advances/policy", h.UpdatePolicy)

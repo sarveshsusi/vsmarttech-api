@@ -273,9 +273,9 @@ func TestTourAdvanceWorkflow(t *testing.T) {
 		t.Fatalf("approved by %s", approved.ApprovedByName)
 	}
 
-	_, err = svc.SubmitExpenses(fx.otherEngineer.ID, models.RoleSupport, created.ID, []ExpenseLineInput{sampleBill()})
-	if !errors.Is(err, ErrTourNotFound) {
-		t.Fatalf("other bill: %v", err)
+	_, err = svc.SubmitExpenses(fx.engineer.ID, models.RoleSupport, created.ID, []ExpenseLineInput{sampleBill()})
+	if !errors.Is(err, ErrTourForbidden) {
+		t.Fatalf("support bill: %v", err)
 	}
 	_, err = svc.Process(fx.admin.ID, models.RoleAdmin, created.ID)
 	if !errors.Is(err, ErrTourNotFound) {
@@ -298,29 +298,22 @@ func TestTourAdvanceWorkflow(t *testing.T) {
 		t.Fatalf("payment %s", paid.PaymentMode)
 	}
 
-	billed, err := svc.SubmitExpenses(fx.engineer.ID, models.RoleSupport, created.ID, []ExpenseLineInput{sampleBill()})
+	billed, err := svc.SubmitExpenses(fx.admin.ID, models.RoleAdmin, created.ID, []ExpenseLineInput{sampleBill()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if billed.Status != string(models.TourStatusBillSubmitted) || billed.BillSubmittedByName != "Sarvesh" || len(billed.Expenses) != 1 {
+	if billed.Status != string(models.TourStatusBillSubmitted) || billed.BillSubmittedByName != "Admin" || len(billed.Expenses) != 1 || billed.Expenses[0].Status != string(models.TourExpenseVerified) {
 		t.Fatalf("billed %+v", billed)
 	}
-	_, err = svc.SubmitExpenses(fx.engineer.ID, models.RoleSupport, created.ID, []ExpenseLineInput{sampleBill()})
-	if !errors.Is(err, ErrInvalidTransition) {
-		t.Fatalf("repeat bill: %v", err)
-	}
-	_, err = svc.Process(fx.admin.ID, models.RoleAdmin, created.ID)
-	assertRule(t, err, "verify every expense line")
-	expenseID, err := uuid.Parse(billed.Expenses[0].ID)
+	secondLine := sampleBill()
+	secondLine.ClaimedAmount = "250"
+	secondLine.ReferenceNumber = "INV-2"
+	added, err := svc.SubmitExpenses(fx.admin.ID, models.RoleAdmin, created.ID, []ExpenseLineInput{secondLine})
 	if err != nil {
 		t.Fatal(err)
 	}
-	reviewed, err := svc.ReviewExpense(fx.admin.ID, models.RoleAdmin, created.ID, expenseID, "ACCEPT", "400", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reviewed.SettlementReady {
-		t.Fatalf("not ready: %s", reviewed.SettlementBlock)
+	if len(added.Expenses) != 2 || !added.SettlementReady || !acceptedSet(added, "500.00", "250.00") {
+		t.Fatalf("added bill ready=%v block=%s lines=%d", added.SettlementReady, added.SettlementBlock, len(added.Expenses))
 	}
 
 	adminList, err := svc.List(fx.admin.ID, models.RoleAdmin, "")
@@ -346,7 +339,7 @@ func TestTourAdvanceWorkflow(t *testing.T) {
 	if !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("approve processed: %v", err)
 	}
-	_, err = svc.SubmitExpenses(fx.engineer.ID, models.RoleSupport, created.ID, []ExpenseLineInput{sampleBill()})
+	_, err = svc.SubmitExpenses(fx.admin.ID, models.RoleAdmin, created.ID, []ExpenseLineInput{sampleBill()})
 	if !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("bill processed: %v", err)
 	}
@@ -380,7 +373,7 @@ func TestTourAdvanceRejectAndTicketFilter(t *testing.T) {
 	if !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("approve rejected: %v", err)
 	}
-	_, err = svc.SubmitExpenses(fx.engineer.ID, models.RoleSupport, created.ID, []ExpenseLineInput{sampleBill()})
+	_, err = svc.SubmitExpenses(fx.admin.ID, models.RoleAdmin, created.ID, []ExpenseLineInput{sampleBill()})
 	if !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("bill rejected: %v", err)
 	}
@@ -779,6 +772,23 @@ func sampleBill() ExpenseLineInput {
 		Category: "FOOD", BillType: "BILL", ExpenseDate: "2026-10-02",
 		Description: "Meals", ClaimedAmount: "500", ReferenceNumber: "INV-1",
 	}
+}
+
+func acceptedSet(view *TourAdvanceView, amounts ...string) bool {
+	if view == nil || len(view.Expenses) != len(amounts) {
+		return false
+	}
+	seen := map[string]int{}
+	for _, amount := range amounts {
+		seen[amount]++
+	}
+	for _, line := range view.Expenses {
+		if line.AcceptedAmount == nil || seen[*line.AcceptedAmount] == 0 {
+			return false
+		}
+		seen[*line.AcceptedAmount]--
+	}
+	return true
 }
 
 func assertRule(t *testing.T, err error, msg string) {

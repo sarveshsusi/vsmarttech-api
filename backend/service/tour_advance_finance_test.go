@@ -63,7 +63,10 @@ func TestTourAdvanceEligibilityAndLedger(t *testing.T) {
 	}
 	_ = paid
 
-	billed, err := svc.SubmitExpenses(fx.engineer.ID, models.RoleSupport, second.ID, []ExpenseLineInput{{
+	if _, err := svc.SubmitExpenses(fx.engineer.ID, models.RoleSupport, second.ID, []ExpenseLineInput{sampleBill()}); !errors.Is(err, ErrTourForbidden) {
+		t.Fatalf("support bill: %v", err)
+	}
+	billed, err := svc.SubmitExpenses(fx.admin.ID, models.RoleAdmin, second.ID, []ExpenseLineInput{{
 		Category: "LOCAL_TRAVEL", BillType: "NON_BILL", ExpenseDate: "2026-10-03",
 		Description: "Auto", ClaimedAmount: "200", MissingReason: "driver had no receipt",
 	}})
@@ -71,36 +74,18 @@ func TestTourAdvanceEligibilityAndLedger(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = svc.Create(fx.engineer.ID, models.RoleSupport, installInput(fx.siteA.ID))
-	if !errors.As(err, &blocked) || blocked.Step != "line_review" {
-		t.Fatalf("review block: %v", err)
+	if !errors.As(err, &blocked) || blocked.Step != "final_processing" {
+		t.Fatalf("process block: %v", err)
 	}
 	expenseID := uuid.MustParse(billed.Expenses[0].ID)
-	if _, err := svc.ReviewExpense(fx.superAdmin.ID, models.RoleSuperAdmin, second.ID, expenseID, "ACCEPT", "200", ""); !errors.Is(err, ErrTourForbidden) {
-		t.Fatalf("super review: %v", err)
+	if _, err := svc.AmendExpense(fx.engineer.ID, models.RoleSupport, second.ID, expenseID, sampleBill()); !errors.Is(err, ErrTourForbidden) {
+		t.Fatalf("support amend: %v", err)
 	}
-	if _, err := svc.ReviewExpense(fx.admin.ID, models.RoleAdmin, second.ID, expenseID, "REJECT", "", "need a clearer reason"); err != nil {
-		t.Fatal(err)
-	}
-	_, err = svc.Process(fx.admin.ID, models.RoleAdmin, second.ID)
-	assertRule(t, err, "verify every expense line")
-	_, err = svc.Create(fx.engineer.ID, models.RoleSupport, installInput(fx.siteA.ID))
-	if !errors.As(err, &blocked) || blocked.Step != "discrepancy" {
-		t.Fatalf("dispute block: %v", err)
-	}
-	if _, err := svc.AmendExpense(fx.otherEngineer.ID, models.RoleSupport, second.ID, expenseID, sampleBill()); !errors.Is(err, ErrTourNotFound) {
-		t.Fatalf("other amend: %v", err)
-	}
-	amended, err := svc.AmendExpense(fx.engineer.ID, models.RoleSupport, second.ID, expenseID, ExpenseLineInput{
-		Category: "FOOD", BillType: "BILL", ExpenseDate: "2026-10-03", Description: "Dinner", ClaimedAmount: "200", ReferenceNumber: "INV-9",
+	amended, err := svc.AmendExpense(fx.admin.ID, models.RoleAdmin, second.ID, expenseID, ExpenseLineInput{
+		Category: "FOOD", BillType: "BILL", ExpenseDate: "2026-10-03", Description: "Dinner", ClaimedAmount: "150", ReferenceNumber: "INV-9",
 	})
-	if err != nil || amended.Expenses[0].Status != string(models.TourExpensePendingReview) {
+	if err != nil || amended.Expenses[0].Status != string(models.TourExpenseVerified) || amended.Expenses[0].AcceptedAmount == nil || *amended.Expenses[0].AcceptedAmount != "150.00" {
 		t.Fatalf("amend: %v %+v", err, amended.Expenses)
-	}
-	if _, err := svc.ReviewExpense(fx.admin.ID, models.RoleAdmin, second.ID, expenseID, "ACCEPT", "150", "rounded"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := svc.AmendExpense(fx.engineer.ID, models.RoleSupport, second.ID, expenseID, sampleBill()); err == nil {
-		t.Fatal("verified line was editable")
 	}
 	if _, err := svc.Process(fx.superAdmin.ID, models.RoleSuperAdmin, second.ID); !errors.Is(err, ErrTourForbidden) {
 		t.Fatalf("super process: %v", err)
@@ -118,6 +103,9 @@ func TestTourAdvanceEligibilityAndLedger(t *testing.T) {
 	}
 	if _, err := svc.Process(fx.admin.ID, models.RoleAdmin, second.ID); !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("second process: %v", err)
+	}
+	if _, err := svc.AmendExpense(fx.admin.ID, models.RoleAdmin, second.ID, expenseID, sampleBill()); !errors.Is(err, ErrInvalidTransition) {
+		t.Fatalf("processed line was editable: %v", err)
 	}
 	if err := db.Model(&models.TourAdvanceLedgerEntry{}).Where("entry_type = ?", "CREDIT_ISSUED").Count(&issued).Error; err != nil {
 		t.Fatal(err)
@@ -187,18 +175,13 @@ func TestTourAdvanceOverspendBlocksAndLegacyProcesses(t *testing.T) {
 	if _, err := svc.Disburse(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID, "ADDITIONAL", "CASH", ""); err != nil {
 		t.Fatal(err)
 	}
-	billed, err := svc.SubmitExpenses(fx.engineer.ID, models.RoleSupport, created.ID, []ExpenseLineInput{{
+	if _, err := svc.SubmitExpenses(fx.admin.ID, models.RoleAdmin, created.ID, []ExpenseLineInput{{
 		Category: "ACCOMMODATION", BillType: "BILL", ExpenseDate: "2026-10-04",
 		Description: "Hotel", ClaimedAmount: "2000", ReferenceNumber: "H-1",
-	}})
-	if err != nil {
+	}}); err != nil {
 		t.Fatal(err)
 	}
-	expenseID := uuid.MustParse(billed.Expenses[0].ID)
-	if _, err := svc.ReviewExpense(fx.admin.ID, models.RoleAdmin, created.ID, expenseID, "ACCEPT", "2000", ""); err != nil {
-		t.Fatal(err)
-	}
-	_, err = svc.Process(fx.admin.ID, models.RoleAdmin, created.ID)
+	_, err := svc.Process(fx.admin.ID, models.RoleAdmin, created.ID)
 	assertRule(t, err, "verified expenses exceed the money paid. This tour cannot be processed until that difference is settled")
 	var credits int64
 	if err := db.Model(&models.TourAdvanceLedgerEntry{}).Count(&credits).Error; err != nil || credits != 0 {

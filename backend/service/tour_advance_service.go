@@ -347,6 +347,7 @@ func (s *TourAdvanceService) List(actor uuid.UUID, role models.Role, status stri
 		q = q.Where("engineer_id = ?", engineer.ID)
 	case models.RoleAdmin:
 		q = q.Where("status IN ?", []models.TourAdvanceStatus{
+			models.TourStatusApproved,
 			models.TourStatusBillSubmitted,
 			models.TourStatusProcessed,
 		})
@@ -365,7 +366,7 @@ func (s *TourAdvanceService) List(actor uuid.UUID, role models.Role, status stri
 		if !knownTourStatus(status) {
 			return nil, &domain.RuleError{Msg: "invalid status"}
 		}
-		if role == models.RoleAdmin && status != string(models.TourStatusBillSubmitted) && status != string(models.TourStatusProcessed) {
+		if role == models.RoleAdmin && status != string(models.TourStatusApproved) && status != string(models.TourStatusBillSubmitted) && status != string(models.TourStatusProcessed) {
 			return &TourAdvanceList{Requests: []TourAdvanceView{}, Counts: counts}, nil
 		}
 		if role == models.RoleSuperAdmin && status == string(models.TourStatusPendingApproval) {
@@ -817,7 +818,7 @@ func (s *TourAdvanceService) canView(actor uuid.UUID, role models.Role, row *mod
 	case models.RoleSuperAdmin:
 		return true
 	case models.RoleAdmin:
-		return row.Status == models.TourStatusBillSubmitted || row.Status == models.TourStatusProcessed
+		return row.Status == models.TourStatusApproved || row.Status == models.TourStatusBillSubmitted || row.Status == models.TourStatusProcessed
 	case models.RoleSupport:
 		return row.Engineer != nil && row.Engineer.UserID == actor
 	default:
