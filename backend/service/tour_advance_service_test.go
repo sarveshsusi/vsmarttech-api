@@ -429,6 +429,109 @@ func TestTourAdvanceDeleteRemovesRequestEventsAndNotifications(t *testing.T) {
 	}
 }
 
+func TestTourAdvanceAdditional(t *testing.T) {
+	db := openTourDB(t)
+	fx := seedTour(t, db)
+	svc := NewTourAdvanceService(db, nil)
+
+	created, err := svc.Create(fx.engineer.ID, models.RoleSupport, installInput(fx.siteA.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Additional != nil {
+		t.Fatal("new tour should not have an additional request")
+	}
+
+	_, err = svc.CreateAdditional(fx.otherEngineer.ID, models.RoleSupport, created.ID, "500", "more food")
+	if !errors.Is(err, ErrTourNotFound) {
+		t.Fatalf("other engineer: %v", err)
+	}
+	_, err = svc.CreateAdditional(fx.admin.ID, models.RoleAdmin, created.ID, "500", "more food")
+	if !errors.Is(err, ErrTourForbidden) {
+		t.Fatalf("admin create: %v", err)
+	}
+	_, err = svc.CreateAdditional(fx.engineer.ID, models.RoleSupport, created.ID, "0", "more food")
+	assertRule(t, err, "amount must be greater than 0")
+	_, err = svc.CreateAdditional(fx.engineer.ID, models.RoleSupport, created.ID, "500", "  ")
+	assertRule(t, err, "reason is required")
+
+	withExtra, err := svc.CreateAdditional(fx.engineer.ID, models.RoleSupport, created.ID, "1500", "Need more for stay")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if withExtra.Status != string(models.TourStatusPendingApproval) {
+		t.Fatalf("parent status changed: %s", withExtra.Status)
+	}
+	if withExtra.Additional == nil || withExtra.Additional.Status != string(models.TourAdditionalPending) || withExtra.Additional.Amount != "1500.00" {
+		t.Fatalf("additional %#v", withExtra.Additional)
+	}
+	_, err = svc.CreateAdditional(fx.engineer.ID, models.RoleSupport, created.ID, "200", "again")
+	assertRule(t, err, "an additional request already exists")
+
+	_, err = svc.ApproveAdditional(fx.admin.ID, models.RoleAdmin, created.ID, "1000", "")
+	if !errors.Is(err, ErrTourForbidden) {
+		t.Fatalf("admin approve: %v", err)
+	}
+	_, err = svc.ApproveAdditional(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID, "2000", "")
+	assertRule(t, err, "approved amount cannot exceed the requested amount")
+
+	approved, err := svc.ApproveAdditional(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID, "1000", "partial")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if approved.Status != string(models.TourStatusPendingApproval) {
+		t.Fatalf("parent status after extra approval: %s", approved.Status)
+	}
+	if approved.Additional.Status != string(models.TourAdditionalApproved) || approved.Additional.ApprovedAmount == nil || *approved.Additional.ApprovedAmount != "1000.00" {
+		t.Fatalf("approved extra %#v", approved.Additional)
+	}
+	_, err = svc.RejectAdditional(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID, "too late")
+	if !errors.Is(err, ErrInvalidTransition) {
+		t.Fatalf("second decision: %v", err)
+	}
+
+	second, err := svc.Create(fx.engineer.ID, models.RoleSupport, installInput(fx.siteA.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&models.TourAdvanceRequest{}).Where("id = ?", second.ID).Update("status", models.TourStatusApproved).Error; err != nil {
+		t.Fatal(err)
+	}
+	pendingExtra, err := svc.CreateAdditional(fx.engineer.ID, models.RoleSupport, second.ID, "800", "local travel")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pendingExtra.Status != string(models.TourStatusApproved) {
+		t.Fatalf("approved parent changed: %s", pendingExtra.Status)
+	}
+	listed, err := svc.List(fx.superAdmin.ID, models.RoleSuperAdmin, string(models.TourStatusPendingApproval))
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := false
+	for _, row := range listed.Requests {
+		if row.ID == second.ID {
+			seen = true
+		}
+	}
+	if !seen {
+		t.Fatal("pending additional on an approved tour was missing from the pending list")
+	}
+
+	if err := db.Model(&models.TourAdvanceRequest{}).Where("id = ?", second.ID).Update("status", models.TourStatusRejected).Error; err != nil {
+		t.Fatal(err)
+	}
+	third, err := svc.Create(fx.engineer.ID, models.RoleSupport, installInput(fx.siteA.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&models.TourAdvanceRequest{}).Where("id = ?", third.ID).Update("status", models.TourStatusRejected).Error; err != nil {
+		t.Fatal(err)
+	}
+	_, err = svc.CreateAdditional(fx.engineer.ID, models.RoleSupport, third.ID, "100", "no")
+	assertRule(t, err, "this tour cannot take an additional request")
+}
+
 const tourTestSchema = `
 CREATE TABLE users (
   id text primary key,
@@ -543,6 +646,22 @@ CREATE TABLE tour_advance_events (
   actor_user_id text,
   note text,
   created_at datetime
+);
+CREATE TABLE tour_advance_additionals (
+  id text primary key,
+  tour_advance_request_id text not null unique,
+  amount numeric,
+  reason text,
+  status text,
+  approved_amount numeric,
+  approval_remarks text,
+  approved_by text,
+  approved_at datetime,
+  rejection_remarks text,
+  rejected_by text,
+  rejected_at datetime,
+  created_at datetime,
+  updated_at datetime
 );
 CREATE TABLE notifications (
   id text primary key,

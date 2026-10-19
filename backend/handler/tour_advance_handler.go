@@ -54,6 +54,11 @@ type rejectTourAdvanceBody struct {
 	RejectionRemarks string `json:"rejection_remarks" binding:"required"`
 }
 
+type additionalTourAdvanceBody struct {
+	Amount string `json:"amount" binding:"required"`
+	Reason string `json:"reason" binding:"required"`
+}
+
 func (h *TourAdvanceHandler) Create(c *gin.Context) {
 	var body createTourAdvanceBody
 	if err := c.ShouldBindJSON(&body); err != nil {
@@ -180,6 +185,63 @@ func (h *TourAdvanceHandler) Process(c *gin.Context) {
 	}
 	actor, role := tourActor(c)
 	view, err := h.service.Process(actor, role, id)
+	if err != nil {
+		writeTourError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, view)
+}
+
+func (h *TourAdvanceHandler) CreateAdditional(c *gin.Context) {
+	id, ok := tourID(c)
+	if !ok {
+		return
+	}
+	var body additionalTourAdvanceBody
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+	actor, role := tourActor(c)
+	view, err := h.service.CreateAdditional(actor, role, id, body.Amount, body.Reason)
+	if err != nil {
+		writeTourError(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, view)
+}
+
+func (h *TourAdvanceHandler) ApproveAdditional(c *gin.Context) {
+	id, ok := tourID(c)
+	if !ok {
+		return
+	}
+	var body approveTourAdvanceBody
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+	actor, role := tourActor(c)
+	view, err := h.service.ApproveAdditional(actor, role, id, body.ApprovedAmount, body.ApprovalRemarks)
+	if err != nil {
+		writeTourError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, view)
+}
+
+func (h *TourAdvanceHandler) RejectAdditional(c *gin.Context) {
+	id, ok := tourID(c)
+	if !ok {
+		return
+	}
+	var body rejectTourAdvanceBody
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "rejection reason is required"})
+		return
+	}
+	actor, role := tourActor(c)
+	view, err := h.service.RejectAdditional(actor, role, id, body.RejectionRemarks)
 	if err != nil {
 		writeTourError(c, err)
 		return

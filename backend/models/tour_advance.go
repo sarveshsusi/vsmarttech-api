@@ -35,11 +35,22 @@ const (
 type TourAdvanceEventAction string
 
 const (
-	TourEventCreated       TourAdvanceEventAction = "created"
-	TourEventApproved      TourAdvanceEventAction = "approved"
-	TourEventRejected      TourAdvanceEventAction = "rejected"
-	TourEventBillSubmitted TourAdvanceEventAction = "bill_submitted"
-	TourEventProcessed     TourAdvanceEventAction = "processed"
+	TourEventCreated             TourAdvanceEventAction = "created"
+	TourEventApproved            TourAdvanceEventAction = "approved"
+	TourEventRejected            TourAdvanceEventAction = "rejected"
+	TourEventBillSubmitted       TourAdvanceEventAction = "bill_submitted"
+	TourEventProcessed           TourAdvanceEventAction = "processed"
+	TourEventAdditionalRequested TourAdvanceEventAction = "additional_requested"
+	TourEventAdditionalApproved  TourAdvanceEventAction = "additional_approved"
+	TourEventAdditionalRejected  TourAdvanceEventAction = "additional_rejected"
+)
+
+type TourAdditionalStatus string
+
+const (
+	TourAdditionalPending  TourAdditionalStatus = "PENDING_APPROVAL"
+	TourAdditionalApproved TourAdditionalStatus = "APPROVED"
+	TourAdditionalRejected TourAdditionalStatus = "REJECTED"
 )
 
 type TourAdvanceRequest struct {
@@ -93,7 +104,8 @@ type TourAdvanceRequest struct {
 	ProcessedByUser *User      `gorm:"foreignKey:ProcessedBy;references:ID;constraint:OnDelete:RESTRICT" json:"-"`
 	ProcessedAt     *time.Time `json:"processed_at,omitempty"`
 
-	Events []TourAdvanceEvent `gorm:"foreignKey:TourAdvanceRequestID" json:"-"`
+	Events     []TourAdvanceEvent     `gorm:"foreignKey:TourAdvanceRequestID" json:"-"`
+	Additional *TourAdvanceAdditional `gorm:"foreignKey:TourAdvanceRequestID" json:"-"`
 
 	CreatedAt time.Time `gorm:"index:idx_tour_advance_status_created,priority:2" json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -115,4 +127,31 @@ type TourAdvanceEvent struct {
 
 func (TourAdvanceEvent) TableName() string {
 	return "tour_advance_events"
+}
+
+type TourAdvanceAdditional struct {
+	ID                   uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	TourAdvanceRequestID uuid.UUID `gorm:"type:uuid;not null;uniqueIndex" json:"tour_advance_request_id"`
+
+	Amount decimal.Decimal      `gorm:"type:numeric(12,2);not null" json:"amount"`
+	Reason string               `gorm:"type:text;not null" json:"reason"`
+	Status TourAdditionalStatus `gorm:"type:varchar(32);not null;index" json:"status"`
+
+	ApprovedAmount  *decimal.Decimal `gorm:"type:numeric(12,2)" json:"approved_amount,omitempty"`
+	ApprovalRemarks string           `gorm:"type:text" json:"approval_remarks"`
+	ApprovedBy      *uuid.UUID       `gorm:"type:uuid;index" json:"approved_by,omitempty"`
+	ApprovedByUser  *User            `gorm:"foreignKey:ApprovedBy;references:ID;constraint:OnDelete:RESTRICT" json:"-"`
+	ApprovedAt      *time.Time       `json:"approved_at,omitempty"`
+
+	RejectionRemarks string     `gorm:"type:text" json:"rejection_remarks"`
+	RejectedBy       *uuid.UUID `gorm:"type:uuid;index" json:"rejected_by,omitempty"`
+	RejectedByUser   *User      `gorm:"foreignKey:RejectedBy;references:ID;constraint:OnDelete:RESTRICT" json:"-"`
+	RejectedAt       *time.Time `json:"rejected_at,omitempty"`
+
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func (TourAdvanceAdditional) TableName() string {
+	return "tour_advance_additionals"
 }

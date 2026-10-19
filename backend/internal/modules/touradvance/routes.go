@@ -17,6 +17,7 @@ func RegisterSupport(support *gin.RouterGroup, h *handler.TourAdvanceHandler) {
 	support.GET("/tour-advances/:id", h.Get)
 	support.DELETE("/tour-advances/:id", h.Delete)
 	support.POST("/tour-advances/:id/bill-submitted", h.BillSubmitted)
+	support.POST("/tour-advances/:id/additional", h.CreateAdditional)
 }
 
 func RegisterAdmin(admin *gin.RouterGroup, h *handler.TourAdvanceHandler) {
@@ -27,6 +28,8 @@ func RegisterAdmin(admin *gin.RouterGroup, h *handler.TourAdvanceHandler) {
 	approve.Use(middleware.RequireRole(models.RoleSuperAdmin))
 	approve.POST("/tour-advances/:id/approve", h.Approve)
 	approve.POST("/tour-advances/:id/reject", h.Reject)
+	approve.POST("/tour-advances/:id/additional/approve", h.ApproveAdditional)
+	approve.POST("/tour-advances/:id/additional/reject", h.RejectAdditional)
 }
 
 func RegisterProcess(adminOnly *gin.RouterGroup, h *handler.TourAdvanceHandler) {

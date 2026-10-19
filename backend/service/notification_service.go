@@ -307,11 +307,14 @@ func (s *NotificationService) pushDeepLink(n *models.Notification) string {
 	case models.NotificationTypeAdminExpiryAlert:
 		return "/admin/contracts/amc"
 	case models.NotificationTypeTourAdvanceSubmitted,
-		models.NotificationTypeTourAdvanceBillSubmitted:
+		models.NotificationTypeTourAdvanceBillSubmitted,
+		models.NotificationTypeTourAdditionalSubmitted:
 		return "/admin/tour-advances"
 	case models.NotificationTypeTourAdvanceApproved,
 		models.NotificationTypeTourAdvanceRejected,
-		models.NotificationTypeTourAdvanceProcessed:
+		models.NotificationTypeTourAdvanceProcessed,
+		models.NotificationTypeTourAdditionalApproved,
+		models.NotificationTypeTourAdditionalRejected:
 		return "/support/tour-advances"
 	}
 	if n.TicketID != nil && *n.TicketID != "" {

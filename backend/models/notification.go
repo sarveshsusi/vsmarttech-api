@@ -43,6 +43,10 @@ const (
 	NotificationTypeTourAdvanceRejected      NotificationType = "tour_advance_rejected"
 	NotificationTypeTourAdvanceBillSubmitted NotificationType = "tour_advance_bill_submitted"
 	NotificationTypeTourAdvanceProcessed     NotificationType = "tour_advance_processed"
+
+	NotificationTypeTourAdditionalSubmitted NotificationType = "tour_advance_additional_submitted"
+	NotificationTypeTourAdditionalApproved  NotificationType = "tour_advance_additional_approved"
+	NotificationTypeTourAdditionalRejected  NotificationType = "tour_advance_additional_rejected"
 )
 
 /* =========================

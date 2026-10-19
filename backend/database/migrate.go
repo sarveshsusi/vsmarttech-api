@@ -263,6 +263,7 @@ func autoMigrate(db *gorm.DB) {
 		========================= */
 		&models.TourAdvanceRequest{},
 		&models.TourAdvanceEvent{},
+		&models.TourAdvanceAdditional{},
 	)
 
 	if err != nil {

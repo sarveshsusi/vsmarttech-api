@@ -90,6 +90,21 @@ type TourAdvanceView struct {
 	ProcessedAt          *time.Time             `json:"processed_at"`
 	CreatedAt            time.Time              `json:"created_at"`
 	Events               []TourAdvanceEventView `json:"events"`
+	Additional           *TourAdditionalView    `json:"additional,omitempty"`
+}
+
+type TourAdditionalView struct {
+	Amount           string     `json:"amount"`
+	Reason           string     `json:"reason"`
+	Status           string     `json:"status"`
+	ApprovedAmount   *string    `json:"approved_amount"`
+	ApprovalRemarks  string     `json:"approval_remarks"`
+	ApprovedByName   string     `json:"approved_by_name"`
+	ApprovedAt       *time.Time `json:"approved_at"`
+	RejectionRemarks string     `json:"rejection_remarks"`
+	RejectedByName   string     `json:"rejected_by_name"`
+	RejectedAt       *time.Time `json:"rejected_at"`
+	CreatedAt        time.Time  `json:"created_at"`
 }
 
 type TourAdvanceList struct {
@@ -320,7 +335,15 @@ func (s *TourAdvanceService) List(actor uuid.UUID, role models.Role, status stri
 		if role == models.RoleAdmin && status != string(models.TourStatusBillSubmitted) && status != string(models.TourStatusProcessed) {
 			return &TourAdvanceList{Requests: []TourAdvanceView{}, Counts: counts}, nil
 		}
-		filtered = filtered.Where("status = ?", status)
+		if role == models.RoleSuperAdmin && status == string(models.TourStatusPendingApproval) {
+			filtered = filtered.Where(
+				"tour_advance_requests.status = ? OR tour_advance_requests.id IN (SELECT tour_advance_request_id FROM tour_advance_additionals WHERE status = ?)",
+				models.TourStatusPendingApproval,
+				models.TourAdditionalPending,
+			)
+		} else {
+			filtered = filtered.Where("tour_advance_requests.status = ?", status)
+		}
 	}
 
 	var rows []models.TourAdvanceRequest
@@ -462,12 +485,18 @@ func (s *TourAdvanceService) Delete(actor uuid.UUID, role models.Role, id uuid.U
 				models.NotificationTypeTourAdvanceRejected,
 				models.NotificationTypeTourAdvanceBillSubmitted,
 				models.NotificationTypeTourAdvanceProcessed,
+				models.NotificationTypeTourAdditionalSubmitted,
+				models.NotificationTypeTourAdditionalApproved,
+				models.NotificationTypeTourAdditionalRejected,
 			},
 			"%"+id.String()+"%",
 		).Delete(&models.Notification{}).Error; err != nil {
 			return err
 		}
 		if err := tx.Where("tour_advance_request_id = ?", id).Delete(&models.TourAdvanceEvent{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("tour_advance_request_id = ?", id).Delete(&models.TourAdvanceAdditional{}).Error; err != nil {
 			return err
 		}
 		res := tx.Where("id = ?", id).Delete(&models.TourAdvanceRequest{})
@@ -674,7 +703,10 @@ func (s *TourAdvanceService) withViewPreloads(db *gorm.DB) *gorm.DB {
 		Preload("Events", func(tx *gorm.DB) *gorm.DB {
 			return tx.Order("created_at ASC")
 		}).
-		Preload("Events.Actor")
+		Preload("Events.Actor").
+		Preload("Additional").
+		Preload("Additional.ApprovedByUser").
+		Preload("Additional.RejectedByUser")
 }
 
 func (s *TourAdvanceService) canView(actor uuid.UUID, role models.Role, row *models.TourAdvanceRequest) bool {
@@ -812,6 +844,7 @@ func toTourView(row *models.TourAdvanceRequest) TourAdvanceView {
 		formatted := row.ApprovedAmount.StringFixed(2)
 		view.ApprovedAmount = &formatted
 	}
+	view.Additional = toAdditionalView(row.Additional)
 	for _, event := range row.Events {
 		view.Events = append(view.Events, TourAdvanceEventView{
 			Action:    string(event.Action),
