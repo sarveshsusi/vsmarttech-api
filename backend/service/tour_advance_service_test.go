@@ -238,27 +238,33 @@ func TestTourAdvanceWorkflow(t *testing.T) {
 		t.Fatalf("other engineer get: %v", err)
 	}
 
-	_, err = svc.Approve(fx.engineer.ID, models.RoleSupport, created.ID, "10000", "", "CASH", "")
+	_, err = svc.Approve(fx.engineer.ID, models.RoleSupport, created.ID, "10000", "", "")
 	if !errors.Is(err, ErrTourForbidden) {
 		t.Fatalf("support approve: %v", err)
 	}
-	_, err = svc.Approve(fx.admin.ID, models.RoleAdmin, created.ID, "10000", "", "CASH", "")
+	_, err = svc.Approve(fx.admin.ID, models.RoleAdmin, created.ID, "10000", "", "")
 	if !errors.Is(err, ErrTourForbidden) {
 		t.Fatalf("admin approve: %v", err)
 	}
-	_, err = svc.Approve(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID, "10200.01", "", "CASH", "")
+	_, err = svc.Approve(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID, "10200.01", "", "")
 	if err == nil {
 		t.Fatal("expected approved amount cap")
 	}
 	_, err = svc.Reject(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID, "  ")
 	assertRule(t, err, "rejection reason is required")
 
-	approved, err := svc.Approve(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID, "10000", "rounded", "ONLINE", "UTR10000")
+	approved, err := svc.Approve(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID, "10000", "rounded", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if approved.Status != string(models.TourStatusApproved) || approved.ApprovedAmount == nil || *approved.ApprovedAmount != "10000.00" {
 		t.Fatalf("approved view %+v", approved.ApprovedAmount)
+	}
+	if approved.PaymentMode != "" {
+		t.Fatalf("approval recorded a payment: %s", approved.PaymentMode)
+	}
+	if approved.NetPayable == nil || *approved.NetPayable != "10000.00" {
+		t.Fatalf("net payable %+v", approved.NetPayable)
 	}
 	if approved.RequestedAmount != "10200.00" {
 		t.Fatalf("requested overwritten: %s", approved.RequestedAmount)
@@ -267,7 +273,7 @@ func TestTourAdvanceWorkflow(t *testing.T) {
 		t.Fatalf("approved by %s", approved.ApprovedByName)
 	}
 
-	_, err = svc.MarkBillSubmitted(fx.otherEngineer.ID, models.RoleSupport, created.ID)
+	_, err = svc.SubmitExpenses(fx.otherEngineer.ID, models.RoleSupport, created.ID, []ExpenseLineInput{sampleBill()})
 	if !errors.Is(err, ErrTourNotFound) {
 		t.Fatalf("other bill: %v", err)
 	}
@@ -284,16 +290,37 @@ func TestTourAdvanceWorkflow(t *testing.T) {
 		t.Fatalf("super process: %v", err)
 	}
 
-	billed, err := svc.MarkBillSubmitted(fx.engineer.ID, models.RoleSupport, created.ID)
+	paid, err := svc.Disburse(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID, "ORIGINAL", "CASH", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if billed.Status != string(models.TourStatusBillSubmitted) || billed.BillSubmittedByName != "Sarvesh" {
+	if paid.PaymentMode != "CASH" {
+		t.Fatalf("payment %s", paid.PaymentMode)
+	}
+
+	billed, err := svc.SubmitExpenses(fx.engineer.ID, models.RoleSupport, created.ID, []ExpenseLineInput{sampleBill()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if billed.Status != string(models.TourStatusBillSubmitted) || billed.BillSubmittedByName != "Sarvesh" || len(billed.Expenses) != 1 {
 		t.Fatalf("billed %+v", billed)
 	}
-	_, err = svc.MarkBillSubmitted(fx.engineer.ID, models.RoleSupport, created.ID)
+	_, err = svc.SubmitExpenses(fx.engineer.ID, models.RoleSupport, created.ID, []ExpenseLineInput{sampleBill()})
 	if !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("repeat bill: %v", err)
+	}
+	_, err = svc.Process(fx.admin.ID, models.RoleAdmin, created.ID)
+	assertRule(t, err, "verify every expense line")
+	expenseID, err := uuid.Parse(billed.Expenses[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reviewed, err := svc.ReviewExpense(fx.admin.ID, models.RoleAdmin, created.ID, expenseID, "ACCEPT", "400", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reviewed.SettlementReady {
+		t.Fatalf("not ready: %s", reviewed.SettlementBlock)
 	}
 
 	adminList, err := svc.List(fx.admin.ID, models.RoleAdmin, "")
@@ -315,11 +342,11 @@ func TestTourAdvanceWorkflow(t *testing.T) {
 	if !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("repeat process: %v", err)
 	}
-	_, err = svc.Approve(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID, "1000", "", "CASH", "")
+	_, err = svc.Approve(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID, "1000", "", "")
 	if !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("approve processed: %v", err)
 	}
-	_, err = svc.MarkBillSubmitted(fx.engineer.ID, models.RoleSupport, created.ID)
+	_, err = svc.SubmitExpenses(fx.engineer.ID, models.RoleSupport, created.ID, []ExpenseLineInput{sampleBill()})
 	if !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("bill processed: %v", err)
 	}
@@ -349,11 +376,11 @@ func TestTourAdvanceRejectAndTicketFilter(t *testing.T) {
 	if rejected.Status != string(models.TourStatusRejected) {
 		t.Fatalf("status %s", rejected.Status)
 	}
-	_, err = svc.Approve(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID, "1000", "", "CASH", "")
+	_, err = svc.Approve(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID, "1000", "", "")
 	if !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("approve rejected: %v", err)
 	}
-	_, err = svc.MarkBillSubmitted(fx.engineer.ID, models.RoleSupport, created.ID)
+	_, err = svc.SubmitExpenses(fx.engineer.ID, models.RoleSupport, created.ID, []ExpenseLineInput{sampleBill()})
 	if !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("bill rejected: %v", err)
 	}
@@ -468,28 +495,29 @@ func TestTourAdvanceAdditional(t *testing.T) {
 	_, err = svc.CreateAdditional(fx.engineer.ID, models.RoleSupport, created.ID, "200", "again")
 	assertRule(t, err, "an additional request already exists")
 
-	_, err = svc.ApproveAdditional(fx.admin.ID, models.RoleAdmin, created.ID, "1000", "", "CASH", "")
+	_, err = svc.ApproveAdditional(fx.admin.ID, models.RoleAdmin, created.ID, "1000", "", "")
 	if !errors.Is(err, ErrTourForbidden) {
 		t.Fatalf("admin approve: %v", err)
 	}
-	_, err = svc.ApproveAdditional(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID, "2000", "", "CASH", "")
+	_, err = svc.ApproveAdditional(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID, "2000", "", "")
 	assertRule(t, err, "approved amount cannot exceed the requested amount")
 
-	_, err = svc.ApproveAdditional(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID, "1000", "partial", "ONLINE", "")
-	assertRule(t, err, "transaction ID is required for an online payment")
-	approved, err := svc.ApproveAdditional(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID, "1000", "partial", "ONLINE", "UTR-8841")
+	approved, err := svc.ApproveAdditional(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID, "1000", "partial", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if approved.Status != string(models.TourStatusPendingApproval) {
 		t.Fatalf("parent status after extra approval: %s", approved.Status)
 	}
-	if approved.Additional.Status != string(models.TourAdditionalApproved) || approved.Additional.ApprovedAmount == nil || *approved.Additional.ApprovedAmount != "1000.00" || approved.Additional.PaymentMode != "ONLINE" || approved.Additional.TransactionID != "UTR-8841" {
+	if approved.Additional.Status != string(models.TourAdditionalApproved) || approved.Additional.ApprovedAmount == nil || *approved.Additional.ApprovedAmount != "1000.00" || approved.Additional.PaymentMode != "" {
 		t.Fatalf("approved extra %#v", approved.Additional)
 	}
 	_, err = svc.RejectAdditional(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID, "too late")
 	if !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("second decision: %v", err)
+	}
+	if _, err := svc.Reject(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID, "replaced before a payment"); err != nil {
+		t.Fatal(err)
 	}
 
 	second, err := svc.Create(fx.engineer.ID, models.RoleSupport, installInput(fx.siteA.ID))
@@ -627,6 +655,9 @@ CREATE TABLE tour_advance_requests (
   travel_expense numeric,
   requested_amount numeric,
   approved_amount numeric,
+  credit_applied numeric default 0,
+  net_payable numeric,
+  approval_justification text,
   status text,
   approval_remarks text,
   approved_by text,
@@ -643,6 +674,8 @@ CREATE TABLE tour_advance_requests (
   created_at datetime,
   updated_at datetime
 );
+CREATE UNIQUE INDEX idx_tour_advance_one_open ON tour_advance_requests (engineer_id)
+  WHERE status NOT IN ('REJECTED', 'PROCESSED');
 CREATE TABLE tour_advance_events (
   id text primary key,
   tour_advance_request_id text,
@@ -669,6 +702,65 @@ CREATE TABLE tour_advance_additionals (
   created_at datetime,
   updated_at datetime
 );
+CREATE TABLE tour_advance_expenses (
+  id text primary key,
+  tour_advance_request_id text,
+  engineer_id text,
+  category text,
+  bill_type text,
+  expense_date text,
+  description text,
+  claimed_amount numeric,
+  reference_number text,
+  missing_reason text,
+  accepted_amount numeric,
+  status text,
+  review_reason text,
+  reviewed_by text,
+  reviewed_at datetime,
+  created_at datetime,
+  updated_at datetime
+);
+CREATE TABLE tour_advance_disbursements (
+  id text primary key,
+  tour_advance_request_id text,
+  source text,
+  amount numeric,
+  payment_mode text,
+  transaction_id text,
+  actor_user_id text,
+  idempotency_key text unique,
+  created_at datetime
+);
+CREATE UNIQUE INDEX idx_tour_disburse_source ON tour_advance_disbursements (tour_advance_request_id, source);
+CREATE TABLE tour_advance_ledger (
+  id text primary key,
+  engineer_id text,
+  originating_tour_id text,
+  consuming_tour_id text,
+  entry_type text,
+  amount numeric,
+  balance_before numeric,
+  balance_after numeric,
+  actor_user_id text,
+  reason text,
+  idempotency_key text unique,
+  created_at datetime
+);
+CREATE TABLE tour_advance_flags (
+  id text primary key,
+  tour_advance_request_id text,
+  kind text,
+  reason text,
+  created_at datetime
+);
+CREATE TABLE tour_advance_policies (
+  id text primary key,
+  high_value_threshold numeric,
+  updated_by text,
+  updated_at datetime,
+  singleton numeric unique
+);
 CREATE TABLE notifications (
   id text primary key,
   user_id text,
@@ -681,6 +773,13 @@ CREATE TABLE notifications (
   updated_at datetime
 );
 `
+
+func sampleBill() ExpenseLineInput {
+	return ExpenseLineInput{
+		Category: "FOOD", BillType: "BILL", ExpenseDate: "2026-10-02",
+		Description: "Meals", ClaimedAmount: "500", ReferenceNumber: "INV-1",
+	}
+}
 
 func assertRule(t *testing.T, err error, msg string) {
 	t.Helper()

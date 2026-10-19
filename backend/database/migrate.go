@@ -87,6 +87,14 @@ func ensureTourAdvanceSchema(db *gorm.DB) {
 		`ALTER TABLE tour_advance_requests ADD CONSTRAINT tour_advance_approved_amount_check CHECK (
 			approved_amount IS NULL OR (approved_amount > 0 AND approved_amount <= requested_amount)
 		)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_tour_advance_one_open ON tour_advance_requests (engineer_id) WHERE status NOT IN ('REJECTED', 'PROCESSED')`,
+		`ALTER TABLE tour_advance_requests DROP CONSTRAINT IF EXISTS tour_advance_payment_check`,
+		`ALTER TABLE tour_advance_requests ADD CONSTRAINT tour_advance_payment_check CHECK (
+			(payment_mode IS NULL AND transaction_id IS NULL)
+			OR (payment_mode = 'CASH' AND transaction_id IS NULL)
+			OR (payment_mode = 'CARRY_FORWARD' AND transaction_id IS NULL)
+			OR (payment_mode = 'ONLINE' AND transaction_id IS NOT NULL AND length(btrim(transaction_id)) > 0)
+		)`,
 	}
 	for _, statement := range statements {
 		if err := db.Exec(statement).Error; err != nil {
@@ -264,6 +272,11 @@ func autoMigrate(db *gorm.DB) {
 		&models.TourAdvanceRequest{},
 		&models.TourAdvanceEvent{},
 		&models.TourAdvanceAdditional{},
+		&models.TourAdvanceExpense{},
+		&models.TourAdvanceDisbursement{},
+		&models.TourAdvanceLedgerEntry{},
+		&models.TourAdvanceFlag{},
+		&models.TourAdvancePolicy{},
 	)
 
 	if err != nil {

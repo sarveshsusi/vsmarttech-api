@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -58,6 +59,7 @@ type TourAdvanceEventView struct {
 type TourAdvanceView struct {
 	ID                   uuid.UUID              `json:"id"`
 	RequestNumber        string                 `json:"request_number"`
+	EngineerID           string                 `json:"engineer_id"`
 	EmployeeName         string                 `json:"employee_name"`
 	CustomerID           uuid.UUID              `json:"customer_id"`
 	CustomerName         string                 `json:"customer_name"`
@@ -90,9 +92,17 @@ type TourAdvanceView struct {
 	BillSubmittedAt      *time.Time             `json:"bill_submitted_at"`
 	ProcessedByName      string                 `json:"processed_by_name"`
 	ProcessedAt          *time.Time             `json:"processed_at"`
+	CreditApplied        string                 `json:"credit_applied"`
+	NetPayable           *string                `json:"net_payable,omitempty"`
+	EngineerCredit       string                 `json:"engineer_credit,omitempty"`
+	SettlementReady      bool                   `json:"settlement_ready"`
+	SettlementBlock      string                 `json:"settlement_block,omitempty"`
 	CreatedAt            time.Time              `json:"created_at"`
 	Events               []TourAdvanceEventView `json:"events"`
 	Additional           *TourAdditionalView    `json:"additional,omitempty"`
+	Expenses             []TourExpenseView      `json:"expenses"`
+	Disbursements        []TourDisbursementView `json:"disbursements"`
+	Flags                []TourFlagView         `json:"flags"`
 }
 
 type TourAdditionalView struct {
@@ -270,6 +280,12 @@ func (s *TourAdvanceService) Create(actor uuid.UUID, role models.Role, in Create
 	}
 
 	err = s.db.Transaction(func(tx *gorm.DB) error {
+		if err := lockEngineer(tx, engineer.ID); err != nil {
+			return err
+		}
+		if err := s.ensureEligible(tx, engineer.ID); err != nil {
+			return err
+		}
 		number, err := nextTourRequestNumber(tx)
 		if err != nil {
 			return err
@@ -278,15 +294,28 @@ func (s *TourAdvanceService) Create(actor uuid.UUID, role models.Role, in Create
 		if err := tx.Create(row).Error; err != nil {
 			return err
 		}
-		return tx.Create(&models.TourAdvanceEvent{
+		if err := tx.Create(&models.TourAdvanceEvent{
 			ID:                   uuid.New(),
 			TourAdvanceRequestID: row.ID,
 			Action:               models.TourEventCreated,
 			ActorUserID:          actor,
 			CreatedAt:            time.Now(),
-		}).Error
+		}).Error; err != nil {
+			return err
+		}
+		return s.recordFlags(tx, row.ID, engineer.ID, actor, requested, false)
 	})
 	if err != nil {
+		if isUniqueViolation(err) {
+			if blocked := s.ensureEligible(s.db, engineer.ID); blocked != nil {
+				s.noteBlocked(actor, blocked)
+				return nil, blocked
+			}
+		}
+		var blocked *TourBlockedError
+		if errors.As(err, &blocked) {
+			s.noteBlocked(actor, blocked)
+		}
 		return nil, err
 	}
 
@@ -374,10 +403,15 @@ func (s *TourAdvanceService) Get(actor uuid.UUID, role models.Role, id uuid.UUID
 		return nil, ErrTourNotFound
 	}
 	view := toTourView(row)
+	if role == models.RoleAdmin || role == models.RoleSuperAdmin {
+		if _, pool, err := creditLots(s.db, row.EngineerID); err == nil {
+			view.EngineerCredit = pool.StringFixed(2)
+		}
+	}
 	return &view, nil
 }
 
-func (s *TourAdvanceService) Approve(actor uuid.UUID, role models.Role, id uuid.UUID, amountRaw, remarks, paymentMode, transactionID string) (*TourAdvanceView, error) {
+func (s *TourAdvanceService) Approve(actor uuid.UUID, role models.Role, id uuid.UUID, amountRaw, remarks, justification string) (*TourAdvanceView, error) {
 	if role != models.RoleSuperAdmin {
 		return nil, ErrTourForbidden
 	}
@@ -386,32 +420,48 @@ func (s *TourAdvanceService) Approve(actor uuid.UUID, role models.Role, id uuid.
 		return nil, err
 	}
 	remarks = strings.TrimSpace(remarks)
-	if len(remarks) > 2000 {
+	justification = strings.TrimSpace(justification)
+	if len(remarks) > 2000 || len(justification) > 2000 {
 		return nil, &domain.RuleError{Msg: "remarks are too long"}
-	}
-	paymentMode, transactionID, err = domain.NormalizePayment(paymentMode, transactionID)
-	if err != nil {
-		return nil, err
 	}
 
 	err = s.transition(id, models.TourStatusPendingApproval, models.TourStatusApproved, func(tx *gorm.DB, row *models.TourAdvanceRequest) error {
 		if err := domain.ValidateApprovedAmount(row.RequestedAmount, amount); err != nil {
 			return err
 		}
+		var flags []models.TourAdvanceFlag
+		if err := tx.Where("tour_advance_request_id = ?", id).Find(&flags).Error; err != nil {
+			return err
+		}
+		if originalFlagged(flags) && justification == "" {
+			return &domain.RuleError{Msg: "a justification is required for this flagged request"}
+		}
+		if err := lockEngineer(tx, row.EngineerID); err != nil {
+			return err
+		}
+		lots, pool, err := creditLots(tx, row.EngineerID)
+		if err != nil {
+			return err
+		}
+		uses, applied, net, err := domain.AllocateCredit(lots, amount)
+		if err != nil {
+			return err
+		}
 		now := time.Now()
 		updates := map[string]interface{}{
-			"status":           models.TourStatusApproved,
-			"approved_amount":  amount,
-			"approval_remarks": remarks,
-			"approved_by":      actor,
-			"approved_at":      now,
-			"payment_mode":     paymentMode,
-			"updated_at":       now,
+			"status":                 models.TourStatusApproved,
+			"approved_amount":        amount,
+			"credit_applied":         applied,
+			"net_payable":            net,
+			"approval_remarks":       remarks,
+			"approval_justification": justification,
+			"approved_by":            actor,
+			"approved_at":            now,
+			"updated_at":             now,
 		}
-		if transactionID == "" {
+		if net.IsZero() {
+			updates["payment_mode"] = "CARRY_FORWARD"
 			updates["transaction_id"] = nil
-		} else {
-			updates["transaction_id"] = transactionID
 		}
 		res := tx.Model(&models.TourAdvanceRequest{}).
 			Where("id = ? AND status = ?", id, models.TourStatusPendingApproval).
@@ -422,7 +472,32 @@ func (s *TourAdvanceService) Approve(actor uuid.UUID, role models.Role, id uuid.
 		if res.RowsAffected == 0 {
 			return ErrInvalidTransition
 		}
-		return writeTourEvent(tx, id, models.TourEventApproved, actor, remarks)
+		if err := writeCreditUses(tx, row.EngineerID, id, actor, uses, pool); err != nil {
+			return err
+		}
+		if net.IsZero() {
+			if err := tx.Create(&models.TourAdvanceDisbursement{
+				ID: uuid.New(), TourAdvanceRequestID: id, Source: "ORIGINAL", Amount: decimal.Zero,
+				PaymentMode: "CARRY_FORWARD", ActorUserID: actor,
+				IdempotencyKey: fmt.Sprintf("disburse:%s:ORIGINAL", id), CreatedAt: now,
+			}).Error; err != nil && !isUniqueViolation(err) {
+				return err
+			}
+		}
+		note := remarks
+		if justification != "" {
+			if note != "" {
+				note += " — "
+			}
+			note += "justification: " + justification
+		}
+		if err := writeTourEvent(tx, id, models.TourEventApproved, actor, note); err != nil {
+			return err
+		}
+		if applied.GreaterThan(decimal.Zero) {
+			return writeTourEvent(tx, id, models.TourEventCreditApplied, actor, applied.StringFixed(2))
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err
@@ -490,8 +565,23 @@ func (s *TourAdvanceService) Delete(actor uuid.UUID, role models.Role, id uuid.U
 	if row.Engineer == nil || row.Engineer.UserID != actor {
 		return ErrTourNotFound
 	}
+	if row.PaymentMode != nil {
+		return &domain.RuleError{Msg: "this tour has a recorded payment and cannot be deleted"}
+	}
 
 	return s.db.Transaction(func(tx *gorm.DB) error {
+		var disbursements int64
+		if err := tx.Model(&models.TourAdvanceDisbursement{}).Where("tour_advance_request_id = ?", id).Count(&disbursements).Error; err != nil {
+			return err
+		}
+		var ledger int64
+		if err := tx.Model(&models.TourAdvanceLedgerEntry{}).
+			Where("originating_tour_id = ? OR consuming_tour_id = ?", id, id).Count(&ledger).Error; err != nil {
+			return err
+		}
+		if disbursements > 0 || ledger > 0 {
+			return &domain.RuleError{Msg: "this tour has a recorded payment and cannot be deleted"}
+		}
 		if err := tx.Where(
 			"type IN ? AND CAST(metadata AS TEXT) LIKE ?",
 			[]models.NotificationType{
@@ -503,12 +593,23 @@ func (s *TourAdvanceService) Delete(actor uuid.UUID, role models.Role, id uuid.U
 				models.NotificationTypeTourAdditionalSubmitted,
 				models.NotificationTypeTourAdditionalApproved,
 				models.NotificationTypeTourAdditionalRejected,
+				models.NotificationTypeTourAdvanceDisbursed,
+				models.NotificationTypeTourExpenseClarification,
+				models.NotificationTypeTourExpenseRejected,
+				models.NotificationTypeTourAdvanceReady,
+				models.NotificationTypeTourAdvanceBlocked,
 			},
 			"%"+id.String()+"%",
 		).Delete(&models.Notification{}).Error; err != nil {
 			return err
 		}
 		if err := tx.Where("tour_advance_request_id = ?", id).Delete(&models.TourAdvanceEvent{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("tour_advance_request_id = ?", id).Delete(&models.TourAdvanceFlag{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("tour_advance_request_id = ?", id).Delete(&models.TourAdvanceExpense{}).Error; err != nil {
 			return err
 		}
 		if err := tx.Where("tour_advance_request_id = ?", id).Delete(&models.TourAdvanceAdditional{}).Error; err != nil {
@@ -525,48 +626,6 @@ func (s *TourAdvanceService) Delete(actor uuid.UUID, role models.Role, id uuid.U
 	})
 }
 
-func (s *TourAdvanceService) MarkBillSubmitted(actor uuid.UUID, role models.Role, id uuid.UUID) (*TourAdvanceView, error) {
-	if role != models.RoleSupport {
-		return nil, ErrTourForbidden
-	}
-	row, err := s.load(id)
-	if err != nil {
-		return nil, err
-	}
-	if row.Engineer == nil || row.Engineer.UserID != actor {
-		return nil, ErrTourNotFound
-	}
-
-	err = s.transition(id, models.TourStatusApproved, models.TourStatusBillSubmitted, func(tx *gorm.DB, current *models.TourAdvanceRequest) error {
-		now := time.Now()
-		res := tx.Model(&models.TourAdvanceRequest{}).
-			Where("id = ? AND status = ?", id, models.TourStatusApproved).
-			Updates(map[string]interface{}{
-				"status":            models.TourStatusBillSubmitted,
-				"bill_submitted_by": actor,
-				"bill_submitted_at": now,
-				"updated_at":        now,
-			})
-		if res.Error != nil {
-			return res.Error
-		}
-		if res.RowsAffected == 0 {
-			return ErrInvalidTransition
-		}
-		return writeTourEvent(tx, id, models.TourEventBillSubmitted, actor, "")
-	})
-	if err != nil {
-		return nil, err
-	}
-	view, err := s.Get(actor, role, id)
-	if err != nil {
-		return nil, err
-	}
-	s.notifyRole(models.RoleAdmin, models.NotificationTypeTourAdvanceBillSubmitted, "Bills submitted",
-		fmt.Sprintf("%s is ready to process.", view.RequestNumber), row)
-	return view, nil
-}
-
 func (s *TourAdvanceService) Process(actor uuid.UUID, role models.Role, id uuid.UUID) (*TourAdvanceView, error) {
 	if role != models.RoleAdmin {
 		return nil, ErrTourForbidden
@@ -579,7 +638,33 @@ func (s *TourAdvanceService) Process(actor uuid.UUID, role models.Role, id uuid.
 		return nil, ErrTourNotFound
 	}
 	err = s.transition(id, models.TourStatusBillSubmitted, models.TourStatusProcessed, func(tx *gorm.DB, current *models.TourAdvanceRequest) error {
+		var full models.TourAdvanceRequest
+		if err := tx.Preload("Additional").Preload("Expenses").Preload("Disbursements").First(&full, "id = ?", id).Error; err != nil {
+			return err
+		}
+		facts := factsFrom(&full)
+		ready, reason, issueCredit := domain.EvaluateSettlement(facts)
+		if !ready {
+			return &domain.RuleError{Msg: reason}
+		}
 		now := time.Now()
+		if issueCredit {
+			_, pool, err := creditLots(tx, full.EngineerID)
+			if err != nil {
+				return err
+			}
+			key := fmt.Sprintf("credit-issued:%s", id)
+			if err := tx.Create(&models.TourAdvanceLedgerEntry{
+				ID: uuid.New(), EngineerID: full.EngineerID, OriginatingTourID: id,
+				EntryType: "CREDIT_ISSUED", Amount: facts.Closing, BalanceBefore: pool, BalanceAfter: pool.Add(facts.Closing),
+				ActorUserID: actor, Reason: "Unused advance after verification", IdempotencyKey: key, CreatedAt: now,
+			}).Error; err != nil && !isUniqueViolation(err) {
+				return err
+			}
+			if err := writeTourEvent(tx, id, models.TourEventCreditIssued, actor, facts.Closing.StringFixed(2)); err != nil {
+				return err
+			}
+		}
 		res := tx.Model(&models.TourAdvanceRequest{}).
 			Where("id = ? AND status = ?", id, models.TourStatusBillSubmitted).
 			Updates(map[string]interface{}{
@@ -721,7 +806,10 @@ func (s *TourAdvanceService) withViewPreloads(db *gorm.DB) *gorm.DB {
 		Preload("Events.Actor").
 		Preload("Additional").
 		Preload("Additional.ApprovedByUser").
-		Preload("Additional.RejectedByUser")
+		Preload("Additional.RejectedByUser").
+		Preload("Expenses.ReviewedByUser").
+		Preload("Disbursements").
+		Preload("Flags")
 }
 
 func (s *TourAdvanceService) canView(actor uuid.UUID, role models.Role, row *models.TourAdvanceRequest) bool {
@@ -823,6 +911,7 @@ func toTourView(row *models.TourAdvanceRequest) TourAdvanceView {
 	view := TourAdvanceView{
 		ID:                   row.ID,
 		RequestNumber:        row.RequestNumber,
+		EngineerID:           row.EngineerID.String(),
 		EmployeeName:         employeeName(row),
 		CustomerID:           row.CustomerID,
 		CustomerName:         customerDisplayName(row),
@@ -854,6 +943,10 @@ func toTourView(row *models.TourAdvanceRequest) TourAdvanceView {
 		ProcessedAt:          row.ProcessedAt,
 		CreatedAt:            row.CreatedAt,
 		Events:               make([]TourAdvanceEventView, 0, len(row.Events)),
+		Expenses:             make([]TourExpenseView, 0, len(row.Expenses)),
+		Disbursements:        make([]TourDisbursementView, 0, len(row.Disbursements)),
+		Flags:                make([]TourFlagView, 0, len(row.Flags)),
+		CreditApplied:        row.CreditApplied.StringFixed(2),
 	}
 	if row.ApprovedAmount != nil {
 		formatted := row.ApprovedAmount.StringFixed(2)
@@ -864,6 +957,38 @@ func toTourView(row *models.TourAdvanceRequest) TourAdvanceView {
 	}
 	if row.TransactionID != nil {
 		view.TransactionID = *row.TransactionID
+	}
+	if row.NetPayable != nil {
+		formatted := row.NetPayable.StringFixed(2)
+		view.NetPayable = &formatted
+	}
+	for _, flag := range row.Flags {
+		view.Flags = append(view.Flags, TourFlagView{Kind: flag.Kind, Reason: flag.Reason})
+	}
+	for _, line := range row.Expenses {
+		item := TourExpenseView{
+			ID: line.ID.String(), Category: string(line.Category), BillType: string(line.BillType),
+			ExpenseDate: line.ExpenseDate, Description: line.Description, ClaimedAmount: line.ClaimedAmount.StringFixed(2),
+			ReferenceNumber: line.ReferenceNumber, MissingReason: line.MissingReason, Status: string(line.Status),
+			ReviewReason: line.ReviewReason, ReviewedByName: userName(line.ReviewedByUser), ReviewedAt: line.ReviewedAt,
+		}
+		if line.AcceptedAmount != nil {
+			formatted := line.AcceptedAmount.StringFixed(2)
+			item.AcceptedAmount = &formatted
+		}
+		view.Expenses = append(view.Expenses, item)
+	}
+	for _, item := range row.Disbursements {
+		paid := TourDisbursementView{Source: item.Source, Amount: item.Amount.StringFixed(2), PaymentMode: item.PaymentMode}
+		if item.TransactionID != nil {
+			paid.TransactionID = *item.TransactionID
+		}
+		view.Disbursements = append(view.Disbursements, paid)
+	}
+	if row.Status == models.TourStatusBillSubmitted {
+		ready, reason, _ := domain.EvaluateSettlement(factsFrom(row))
+		view.SettlementReady = ready
+		view.SettlementBlock = reason
 	}
 	view.Additional = toAdditionalView(row.Additional)
 	for _, event := range row.Events {

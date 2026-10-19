@@ -70,6 +70,9 @@ func (s *TourAdvanceService) CreateAdditional(actor uuid.UUID, role models.Role,
 	if err != nil {
 		return nil, err
 	}
+	_ = s.db.Transaction(func(tx *gorm.DB) error {
+		return s.recordFlags(tx, id, row.EngineerID, actor, amount, true)
+	})
 
 	var actorUser models.User
 	_ = s.db.Select("name").First(&actorUser, "id = ?", actor).Error
@@ -83,7 +86,7 @@ func (s *TourAdvanceService) CreateAdditional(actor uuid.UUID, role models.Role,
 	return s.Get(actor, role, id)
 }
 
-func (s *TourAdvanceService) ApproveAdditional(actor uuid.UUID, role models.Role, id uuid.UUID, amountRaw, remarks, paymentMode, transactionID string) (*TourAdvanceView, error) {
+func (s *TourAdvanceService) ApproveAdditional(actor uuid.UUID, role models.Role, id uuid.UUID, amountRaw, remarks, justification string) (*TourAdvanceView, error) {
 	if role != models.RoleSuperAdmin {
 		return nil, ErrTourForbidden
 	}
@@ -92,12 +95,9 @@ func (s *TourAdvanceService) ApproveAdditional(actor uuid.UUID, role models.Role
 		return nil, err
 	}
 	remarks = strings.TrimSpace(remarks)
-	if len(remarks) > 2000 {
+	justification = strings.TrimSpace(justification)
+	if len(remarks) > 2000 || len(justification) > 2000 {
 		return nil, &domain.RuleError{Msg: "remarks are too long"}
-	}
-	paymentMode, transactionID, err = domain.NormalizePayment(paymentMode, transactionID)
-	if err != nil {
-		return nil, err
 	}
 
 	err = s.db.Transaction(func(tx *gorm.DB) error {
@@ -111,31 +111,38 @@ func (s *TourAdvanceService) ApproveAdditional(actor uuid.UUID, role models.Role
 		if err := domain.ValidateApprovedAmount(extra.Amount, amount); err != nil {
 			return err
 		}
+		var flags []models.TourAdvanceFlag
+		if err := tx.Where("tour_advance_request_id = ?", id).Find(&flags).Error; err != nil {
+			return err
+		}
+		if additionalFlagged(flags) && justification == "" {
+			return &domain.RuleError{Msg: "a justification is required for this flagged request"}
+		}
 		now := time.Now()
-		updates := map[string]interface{}{
-			"status":           models.TourAdditionalApproved,
-			"approved_amount":  amount,
-			"approval_remarks": remarks,
-			"approved_by":      actor,
-			"approved_at":      now,
-			"payment_mode":     paymentMode,
-			"updated_at":       now,
-		}
-		if transactionID == "" {
-			updates["transaction_id"] = nil
-		} else {
-			updates["transaction_id"] = transactionID
-		}
 		res := tx.Model(&models.TourAdvanceAdditional{}).
 			Where("id = ? AND status = ?", extra.ID, models.TourAdditionalPending).
-			Updates(updates)
+			Updates(map[string]interface{}{
+				"status":           models.TourAdditionalApproved,
+				"approved_amount":  amount,
+				"approval_remarks": remarks,
+				"approved_by":      actor,
+				"approved_at":      now,
+				"updated_at":       now,
+			})
 		if res.Error != nil {
 			return res.Error
 		}
 		if res.RowsAffected == 0 {
 			return ErrInvalidTransition
 		}
-		return writeTourEvent(tx, id, models.TourEventAdditionalApproved, actor, remarks)
+		note := remarks
+		if justification != "" {
+			if note != "" {
+				note += " — "
+			}
+			note += "justification: " + justification
+		}
+		return writeTourEvent(tx, id, models.TourEventAdditionalApproved, actor, note)
 	})
 	if err != nil {
 		return nil, err

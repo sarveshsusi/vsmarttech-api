@@ -313,9 +313,15 @@ func (s *NotificationService) pushDeepLink(n *models.Notification) string {
 	case models.NotificationTypeTourAdvanceApproved,
 		models.NotificationTypeTourAdvanceRejected,
 		models.NotificationTypeTourAdvanceProcessed,
+		models.NotificationTypeTourAdvanceDisbursed,
+		models.NotificationTypeTourExpenseClarification,
+		models.NotificationTypeTourExpenseRejected,
+		models.NotificationTypeTourAdvanceBlocked,
 		models.NotificationTypeTourAdditionalApproved,
 		models.NotificationTypeTourAdditionalRejected:
 		return "/support/tour-advances"
+	case models.NotificationTypeTourAdvanceReady:
+		return "/admin/tour-advances"
 	}
 	if n.TicketID != nil && *n.TicketID != "" {
 		return "/admin/tickets/details?id=" + url.QueryEscape(*n.TicketID)
