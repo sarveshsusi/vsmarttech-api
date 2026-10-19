@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"regexp"
 	"strings"
 
 	"github.com/shopspring/decimal"
@@ -140,6 +141,27 @@ func ValidateTourCreate(in TourCreateRules) error {
 		return err
 	}
 	return nil
+}
+
+var transactionIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 ./_-]{0,63}$`)
+
+func NormalizePayment(mode, transactionID string) (string, string, error) {
+	mode = strings.ToUpper(strings.TrimSpace(mode))
+	transactionID = strings.TrimSpace(transactionID)
+	switch mode {
+	case "CASH":
+		return "CASH", "", nil
+	case "ONLINE":
+		if transactionID == "" {
+			return "", "", rule("transaction ID is required for an online payment")
+		}
+		if !transactionIDPattern.MatchString(transactionID) {
+			return "", "", rule("transaction ID is invalid")
+		}
+		return "ONLINE", transactionID, nil
+	default:
+		return "", "", rule("choose cash or online")
+	}
 }
 
 func ValidateApprovedAmount(requested, approved decimal.Decimal) error {

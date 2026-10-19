@@ -83,6 +83,8 @@ type TourAdvanceRequest struct {
 
 	RequestedAmount decimal.Decimal  `gorm:"type:numeric(12,2);not null" json:"requested_amount"`
 	ApprovedAmount  *decimal.Decimal `gorm:"type:numeric(12,2)" json:"approved_amount,omitempty"`
+	PaymentMode     *string          `gorm:"type:varchar(10)" json:"payment_mode,omitempty"`
+	TransactionID   *string          `gorm:"type:varchar(64)" json:"transaction_id,omitempty"`
 
 	Status TourAdvanceStatus `gorm:"type:varchar(32);not null;index;index:idx_tour_advance_status_created,priority:1" json:"status"`
 
@@ -138,6 +140,8 @@ type TourAdvanceAdditional struct {
 	Status TourAdditionalStatus `gorm:"type:varchar(32);not null;index" json:"status"`
 
 	ApprovedAmount  *decimal.Decimal `gorm:"type:numeric(12,2)" json:"approved_amount,omitempty"`
+	PaymentMode     *string          `gorm:"type:varchar(10)" json:"payment_mode,omitempty"`
+	TransactionID   *string          `gorm:"type:varchar(64)" json:"transaction_id,omitempty"`
 	ApprovalRemarks string           `gorm:"type:text" json:"approval_remarks"`
 	ApprovedBy      *uuid.UUID       `gorm:"type:uuid;index" json:"approved_by,omitempty"`
 	ApprovedByUser  *User            `gorm:"foreignKey:ApprovedBy;references:ID;constraint:OnDelete:RESTRICT" json:"-"`

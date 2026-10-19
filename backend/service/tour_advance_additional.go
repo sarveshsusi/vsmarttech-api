@@ -83,7 +83,7 @@ func (s *TourAdvanceService) CreateAdditional(actor uuid.UUID, role models.Role,
 	return s.Get(actor, role, id)
 }
 
-func (s *TourAdvanceService) ApproveAdditional(actor uuid.UUID, role models.Role, id uuid.UUID, amountRaw, remarks string) (*TourAdvanceView, error) {
+func (s *TourAdvanceService) ApproveAdditional(actor uuid.UUID, role models.Role, id uuid.UUID, amountRaw, remarks, paymentMode, transactionID string) (*TourAdvanceView, error) {
 	if role != models.RoleSuperAdmin {
 		return nil, ErrTourForbidden
 	}
@@ -94,6 +94,10 @@ func (s *TourAdvanceService) ApproveAdditional(actor uuid.UUID, role models.Role
 	remarks = strings.TrimSpace(remarks)
 	if len(remarks) > 2000 {
 		return nil, &domain.RuleError{Msg: "remarks are too long"}
+	}
+	paymentMode, transactionID, err = domain.NormalizePayment(paymentMode, transactionID)
+	if err != nil {
+		return nil, err
 	}
 
 	err = s.db.Transaction(func(tx *gorm.DB) error {
@@ -108,16 +112,23 @@ func (s *TourAdvanceService) ApproveAdditional(actor uuid.UUID, role models.Role
 			return err
 		}
 		now := time.Now()
+		updates := map[string]interface{}{
+			"status":           models.TourAdditionalApproved,
+			"approved_amount":  amount,
+			"approval_remarks": remarks,
+			"approved_by":      actor,
+			"approved_at":      now,
+			"payment_mode":     paymentMode,
+			"updated_at":       now,
+		}
+		if transactionID == "" {
+			updates["transaction_id"] = nil
+		} else {
+			updates["transaction_id"] = transactionID
+		}
 		res := tx.Model(&models.TourAdvanceAdditional{}).
 			Where("id = ? AND status = ?", extra.ID, models.TourAdditionalPending).
-			Updates(map[string]interface{}{
-				"status":           models.TourAdditionalApproved,
-				"approved_amount":  amount,
-				"approval_remarks": remarks,
-				"approved_by":      actor,
-				"approved_at":      now,
-				"updated_at":       now,
-			})
+			Updates(updates)
 		if res.Error != nil {
 			return res.Error
 		}
@@ -225,6 +236,12 @@ func toAdditionalView(row *models.TourAdvanceAdditional) *TourAdditionalView {
 	if row.ApprovedAmount != nil {
 		formatted := row.ApprovedAmount.StringFixed(2)
 		view.ApprovedAmount = &formatted
+	}
+	if row.PaymentMode != nil {
+		view.PaymentMode = *row.PaymentMode
+	}
+	if row.TransactionID != nil {
+		view.TransactionID = *row.TransactionID
 	}
 	return view
 }

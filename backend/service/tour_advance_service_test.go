@@ -238,22 +238,22 @@ func TestTourAdvanceWorkflow(t *testing.T) {
 		t.Fatalf("other engineer get: %v", err)
 	}
 
-	_, err = svc.Approve(fx.engineer.ID, models.RoleSupport, created.ID, "10000", "")
+	_, err = svc.Approve(fx.engineer.ID, models.RoleSupport, created.ID, "10000", "", "CASH", "")
 	if !errors.Is(err, ErrTourForbidden) {
 		t.Fatalf("support approve: %v", err)
 	}
-	_, err = svc.Approve(fx.admin.ID, models.RoleAdmin, created.ID, "10000", "")
+	_, err = svc.Approve(fx.admin.ID, models.RoleAdmin, created.ID, "10000", "", "CASH", "")
 	if !errors.Is(err, ErrTourForbidden) {
 		t.Fatalf("admin approve: %v", err)
 	}
-	_, err = svc.Approve(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID, "10200.01", "")
+	_, err = svc.Approve(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID, "10200.01", "", "CASH", "")
 	if err == nil {
 		t.Fatal("expected approved amount cap")
 	}
 	_, err = svc.Reject(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID, "  ")
 	assertRule(t, err, "rejection reason is required")
 
-	approved, err := svc.Approve(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID, "10000", "rounded")
+	approved, err := svc.Approve(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID, "10000", "rounded", "ONLINE", "UTR10000")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -315,7 +315,7 @@ func TestTourAdvanceWorkflow(t *testing.T) {
 	if !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("repeat process: %v", err)
 	}
-	_, err = svc.Approve(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID, "1000", "")
+	_, err = svc.Approve(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID, "1000", "", "CASH", "")
 	if !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("approve processed: %v", err)
 	}
@@ -349,7 +349,7 @@ func TestTourAdvanceRejectAndTicketFilter(t *testing.T) {
 	if rejected.Status != string(models.TourStatusRejected) {
 		t.Fatalf("status %s", rejected.Status)
 	}
-	_, err = svc.Approve(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID, "1000", "")
+	_, err = svc.Approve(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID, "1000", "", "CASH", "")
 	if !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("approve rejected: %v", err)
 	}
@@ -468,21 +468,23 @@ func TestTourAdvanceAdditional(t *testing.T) {
 	_, err = svc.CreateAdditional(fx.engineer.ID, models.RoleSupport, created.ID, "200", "again")
 	assertRule(t, err, "an additional request already exists")
 
-	_, err = svc.ApproveAdditional(fx.admin.ID, models.RoleAdmin, created.ID, "1000", "")
+	_, err = svc.ApproveAdditional(fx.admin.ID, models.RoleAdmin, created.ID, "1000", "", "CASH", "")
 	if !errors.Is(err, ErrTourForbidden) {
 		t.Fatalf("admin approve: %v", err)
 	}
-	_, err = svc.ApproveAdditional(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID, "2000", "")
+	_, err = svc.ApproveAdditional(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID, "2000", "", "CASH", "")
 	assertRule(t, err, "approved amount cannot exceed the requested amount")
 
-	approved, err := svc.ApproveAdditional(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID, "1000", "partial")
+	_, err = svc.ApproveAdditional(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID, "1000", "partial", "ONLINE", "")
+	assertRule(t, err, "transaction ID is required for an online payment")
+	approved, err := svc.ApproveAdditional(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID, "1000", "partial", "ONLINE", "UTR-8841")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if approved.Status != string(models.TourStatusPendingApproval) {
 		t.Fatalf("parent status after extra approval: %s", approved.Status)
 	}
-	if approved.Additional.Status != string(models.TourAdditionalApproved) || approved.Additional.ApprovedAmount == nil || *approved.Additional.ApprovedAmount != "1000.00" {
+	if approved.Additional.Status != string(models.TourAdditionalApproved) || approved.Additional.ApprovedAmount == nil || *approved.Additional.ApprovedAmount != "1000.00" || approved.Additional.PaymentMode != "ONLINE" || approved.Additional.TransactionID != "UTR-8841" {
 		t.Fatalf("approved extra %#v", approved.Additional)
 	}
 	_, err = svc.RejectAdditional(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID, "too late")
@@ -636,6 +638,8 @@ CREATE TABLE tour_advance_requests (
   bill_submitted_at datetime,
   processed_by text,
   processed_at datetime,
+  payment_mode text,
+  transaction_id text,
   created_at datetime,
   updated_at datetime
 );
@@ -660,6 +664,8 @@ CREATE TABLE tour_advance_additionals (
   rejection_remarks text,
   rejected_by text,
   rejected_at datetime,
+  payment_mode text,
+  transaction_id text,
   created_at datetime,
   updated_at datetime
 );

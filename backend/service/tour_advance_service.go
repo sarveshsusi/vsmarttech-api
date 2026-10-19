@@ -77,6 +77,8 @@ type TourAdvanceView struct {
 	TravelExpense        string                 `json:"travel_expense"`
 	RequestedAmount      string                 `json:"requested_amount"`
 	ApprovedAmount       *string                `json:"approved_amount"`
+	PaymentMode          string                 `json:"payment_mode,omitempty"`
+	TransactionID        string                 `json:"transaction_id,omitempty"`
 	Status               string                 `json:"status"`
 	ApprovalRemarks      string                 `json:"approval_remarks"`
 	ApprovedByName       string                 `json:"approved_by_name"`
@@ -98,6 +100,8 @@ type TourAdditionalView struct {
 	Reason           string     `json:"reason"`
 	Status           string     `json:"status"`
 	ApprovedAmount   *string    `json:"approved_amount"`
+	PaymentMode      string     `json:"payment_mode,omitempty"`
+	TransactionID    string     `json:"transaction_id,omitempty"`
 	ApprovalRemarks  string     `json:"approval_remarks"`
 	ApprovedByName   string     `json:"approved_by_name"`
 	ApprovedAt       *time.Time `json:"approved_at"`
@@ -373,7 +377,7 @@ func (s *TourAdvanceService) Get(actor uuid.UUID, role models.Role, id uuid.UUID
 	return &view, nil
 }
 
-func (s *TourAdvanceService) Approve(actor uuid.UUID, role models.Role, id uuid.UUID, amountRaw, remarks string) (*TourAdvanceView, error) {
+func (s *TourAdvanceService) Approve(actor uuid.UUID, role models.Role, id uuid.UUID, amountRaw, remarks, paymentMode, transactionID string) (*TourAdvanceView, error) {
 	if role != models.RoleSuperAdmin {
 		return nil, ErrTourForbidden
 	}
@@ -385,22 +389,33 @@ func (s *TourAdvanceService) Approve(actor uuid.UUID, role models.Role, id uuid.
 	if len(remarks) > 2000 {
 		return nil, &domain.RuleError{Msg: "remarks are too long"}
 	}
+	paymentMode, transactionID, err = domain.NormalizePayment(paymentMode, transactionID)
+	if err != nil {
+		return nil, err
+	}
 
 	err = s.transition(id, models.TourStatusPendingApproval, models.TourStatusApproved, func(tx *gorm.DB, row *models.TourAdvanceRequest) error {
 		if err := domain.ValidateApprovedAmount(row.RequestedAmount, amount); err != nil {
 			return err
 		}
 		now := time.Now()
+		updates := map[string]interface{}{
+			"status":           models.TourStatusApproved,
+			"approved_amount":  amount,
+			"approval_remarks": remarks,
+			"approved_by":      actor,
+			"approved_at":      now,
+			"payment_mode":     paymentMode,
+			"updated_at":       now,
+		}
+		if transactionID == "" {
+			updates["transaction_id"] = nil
+		} else {
+			updates["transaction_id"] = transactionID
+		}
 		res := tx.Model(&models.TourAdvanceRequest{}).
 			Where("id = ? AND status = ?", id, models.TourStatusPendingApproval).
-			Updates(map[string]interface{}{
-				"status":           models.TourStatusApproved,
-				"approved_amount":  amount,
-				"approval_remarks": remarks,
-				"approved_by":      actor,
-				"approved_at":      now,
-				"updated_at":       now,
-			})
+			Updates(updates)
 		if res.Error != nil {
 			return res.Error
 		}
@@ -843,6 +858,12 @@ func toTourView(row *models.TourAdvanceRequest) TourAdvanceView {
 	if row.ApprovedAmount != nil {
 		formatted := row.ApprovedAmount.StringFixed(2)
 		view.ApprovedAmount = &formatted
+	}
+	if row.PaymentMode != nil {
+		view.PaymentMode = *row.PaymentMode
+	}
+	if row.TransactionID != nil {
+		view.TransactionID = *row.TransactionID
 	}
 	view.Additional = toAdditionalView(row.Additional)
 	for _, event := range row.Events {

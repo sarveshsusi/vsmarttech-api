@@ -48,6 +48,8 @@ type tourTravellerBody struct {
 type approveTourAdvanceBody struct {
 	ApprovedAmount  string `json:"approved_amount" binding:"required"`
 	ApprovalRemarks string `json:"approval_remarks"`
+	PaymentMode     string `json:"payment_mode" binding:"required"`
+	TransactionID   string `json:"transaction_id"`
 }
 
 type rejectTourAdvanceBody struct {
@@ -124,7 +126,7 @@ func (h *TourAdvanceHandler) Approve(c *gin.Context) {
 		return
 	}
 	actor, role := tourActor(c)
-	view, err := h.service.Approve(actor, role, id, body.ApprovedAmount, body.ApprovalRemarks)
+	view, err := h.service.Approve(actor, role, id, body.ApprovedAmount, body.ApprovalRemarks, body.PaymentMode, body.TransactionID)
 	if err != nil {
 		writeTourError(c, err)
 		return
@@ -222,7 +224,7 @@ func (h *TourAdvanceHandler) ApproveAdditional(c *gin.Context) {
 		return
 	}
 	actor, role := tourActor(c)
-	view, err := h.service.ApproveAdditional(actor, role, id, body.ApprovedAmount, body.ApprovalRemarks)
+	view, err := h.service.ApproveAdditional(actor, role, id, body.ApprovedAmount, body.ApprovalRemarks, body.PaymentMode, body.TransactionID)
 	if err != nil {
 		writeTourError(c, err)
 		return
