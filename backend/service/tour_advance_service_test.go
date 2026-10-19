@@ -449,6 +449,28 @@ func TestTourAdvanceDeleteRemovesRequestEventsAndNotifications(t *testing.T) {
 	}
 }
 
+func TestTourAdvanceDeleteRemovesPaidRequest(t *testing.T) {
+	db := openTourDB(t)
+	fx := seedTour(t, db)
+	svc := NewTourAdvanceService(db, nil)
+
+	created := mustCreateTour(t, svc, fx)
+	mustApprove(t, svc, fx, created.ID, "1000")
+	if _, err := svc.Disburse(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID, "ORIGINAL", "CASH", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Delete(fx.engineer.ID, models.RoleSupport, created.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&models.TourAdvanceRequest{}, "id = ?", created.ID).Error; !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("paid request still present: %v", err)
+	}
+	var disbursements int64
+	if err := db.Model(&models.TourAdvanceDisbursement{}).Where("tour_advance_request_id = ?", created.ID).Count(&disbursements).Error; err != nil || disbursements != 0 {
+		t.Fatalf("disbursements left %d %v", disbursements, err)
+	}
+}
+
 func TestTourAdvanceAdditional(t *testing.T) {
 	db := openTourDB(t)
 	fx := seedTour(t, db)

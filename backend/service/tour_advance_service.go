@@ -566,23 +566,8 @@ func (s *TourAdvanceService) Delete(actor uuid.UUID, role models.Role, id uuid.U
 	if row.Engineer == nil || row.Engineer.UserID != actor {
 		return ErrTourNotFound
 	}
-	if row.PaymentMode != nil {
-		return &domain.RuleError{Msg: "this tour has a recorded payment and cannot be deleted"}
-	}
 
 	return s.db.Transaction(func(tx *gorm.DB) error {
-		var disbursements int64
-		if err := tx.Model(&models.TourAdvanceDisbursement{}).Where("tour_advance_request_id = ?", id).Count(&disbursements).Error; err != nil {
-			return err
-		}
-		var ledger int64
-		if err := tx.Model(&models.TourAdvanceLedgerEntry{}).
-			Where("originating_tour_id = ? OR consuming_tour_id = ?", id, id).Count(&ledger).Error; err != nil {
-			return err
-		}
-		if disbursements > 0 || ledger > 0 {
-			return &domain.RuleError{Msg: "this tour has a recorded payment and cannot be deleted"}
-		}
 		if err := tx.Where(
 			"type IN ? AND CAST(metadata AS TEXT) LIKE ?",
 			[]models.NotificationType{
@@ -611,6 +596,12 @@ func (s *TourAdvanceService) Delete(actor uuid.UUID, role models.Role, id uuid.U
 			return err
 		}
 		if err := tx.Where("tour_advance_request_id = ?", id).Delete(&models.TourAdvanceExpense{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("tour_advance_request_id = ?", id).Delete(&models.TourAdvanceDisbursement{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("originating_tour_id = ? OR consuming_tour_id = ?", id, id).Delete(&models.TourAdvanceLedgerEntry{}).Error; err != nil {
 			return err
 		}
 		if err := tx.Where("tour_advance_request_id = ?", id).Delete(&models.TourAdvanceAdditional{}).Error; err != nil {
