@@ -37,14 +37,10 @@ func (r *DashboardRepository) FetchAdminStats() (map[string]int64, error) {
 		return nil, err
 	}
 
-	// Pending = Open OR Assigned OR In Progress
+	// Pending = every ticket that is not closed, including in progress and halted.
 	if err := r.db.
 		Table("tickets").
-		Where("status IN ?", []string{
-			"Open",
-			"Assigned",
-			"In Progress",
-		}).
+		Where("status <> ?", "Closed").
 		Count(&pendingTickets).Error; err != nil {
 		return nil, err
 	}
@@ -188,10 +184,10 @@ func (r *DashboardRepository) GetSupportStats() (*SupportStats, error) {
 		return nil, err
 	}
 
-	// Pending tickets (Open, Assigned, In Progress)
+	// Pending tickets are unfinished work other than a brand-new Open ticket.
 	if err := r.db.
 		Table("tickets").
-		Where("status IN ?", []string{"Open", "Assigned", "In Progress"}).
+		Where("status NOT IN ?", []string{"Open", "Closed"}).
 		Count(&stats.PendingTickets).Error; err != nil {
 		return nil, err
 	}

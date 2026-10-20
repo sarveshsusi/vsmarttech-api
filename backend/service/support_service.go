@@ -122,12 +122,13 @@ func (s *SupportService) GetEngineerDashboardStats(userID uuid.UUID) (map[string
 		switch ticket.Status {
 		case models.StatusClosed:
 			closedTickets++
-		case models.StatusAssigned:
-			pendingTickets++
 		case models.StatusOpen:
 			openTickets++
 		case models.StatusInProgress:
 			inProgressTickets++
+			pendingTickets++
+		case models.StatusAssigned, models.StatusHalted:
+			pendingTickets++
 		}
 	}
 
