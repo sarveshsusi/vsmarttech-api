@@ -419,7 +419,7 @@ func (h *TourAdvanceHandler) SupportHistory(c *gin.Context) {
 func (h *TourAdvanceHandler) Summary(c *gin.Context) {
 	actor, role := tourActor(c)
 	view, err := h.service.FinancialSummary(actor, role, service.TourSummaryFilter{
-		EngineerID: c.Query("engineer_id"), CustomerID: c.Query("customer_id"), Location: c.Query("location"),
+		EngineerID: c.Query("engineer_id"), CustomerID: c.Query("customer_id"), CompanyID: c.Query("company_id"), Location: c.Query("location"),
 		RequestNumber: c.Query("request_number"), From: c.Query("from"), To: c.Query("to"),
 		Status: c.Query("status"), Verification: c.Query("verification"),
 	})

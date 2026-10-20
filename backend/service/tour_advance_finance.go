@@ -110,6 +110,7 @@ type TourFinancialSummary struct {
 type TourSummaryFilter struct {
 	EngineerID    string
 	CustomerID    string
+	CompanyID     string
 	Location      string
 	RequestNumber string
 	From          string

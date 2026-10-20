@@ -122,6 +122,14 @@ func summaryWhere(filter TourSummaryFilter) (string, []interface{}, error) {
 		parts = append(parts, "r.customer_id = ?")
 		args = append(args, parsed)
 	}
+	if id := strings.TrimSpace(filter.CompanyID); id != "" {
+		parsed, err := uuid.Parse(id)
+		if err != nil {
+			return "", nil, &domain.RuleError{Msg: "company is invalid"}
+		}
+		parts = append(parts, "r.customer_id IN (SELECT id FROM customers WHERE company_id = ?)")
+		args = append(args, parsed)
+	}
 	if location := strings.TrimSpace(filter.Location); location != "" {
 		parts = append(parts, "LOWER(r.location_snapshot) LIKE ?")
 		args = append(args, "%"+strings.ToLower(escapeLike(location))+"%")
