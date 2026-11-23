@@ -11,6 +11,9 @@ import (
 
 var maxMoney = decimal.RequireFromString("9999999999.99")
 
+// DefaultDailyAllowanceRate is ₹200 per person per day.
+var DefaultDailyAllowanceRate = decimal.RequireFromString("200")
+
 type RuleError struct {
 	Msg string
 }
@@ -39,14 +42,33 @@ func CanTourTransition(from, to models.TourAdvanceStatus) bool {
 }
 
 type TourExpenseInput struct {
-	Food          decimal.Decimal
-	Local         decimal.Decimal
-	Accommodation decimal.Decimal
-	Travel        decimal.Decimal
+	Food           decimal.Decimal
+	Local          decimal.Decimal
+	Accommodation  decimal.Decimal
+	Travel         decimal.Decimal
+	DailyAllowance decimal.Decimal
+}
+
+// DailyAllowance is rate × persons × days. Persons and days must be positive whole numbers.
+func DailyAllowance(rate decimal.Decimal, persons, days int) (decimal.Decimal, error) {
+	if persons <= 0 {
+		return decimal.Zero, rule("persons travelling must be greater than 0")
+	}
+	if days <= 0 {
+		return decimal.Zero, rule("days planned must be greater than 0")
+	}
+	if rate.IsNegative() || rate.Exponent() < -2 || rate.GreaterThan(maxMoney) {
+		return decimal.Zero, rule("invalid amount")
+	}
+	total := rate.Mul(decimal.NewFromInt(int64(persons))).Mul(decimal.NewFromInt(int64(days)))
+	if total.GreaterThan(maxMoney) {
+		return decimal.Zero, rule("amount is too large")
+	}
+	return total, nil
 }
 
 func RequestedAmount(in TourExpenseInput) (decimal.Decimal, error) {
-	parts := []decimal.Decimal{in.Food, in.Local, in.Accommodation, in.Travel}
+	parts := []decimal.Decimal{in.Food, in.Local, in.Accommodation, in.Travel, in.DailyAllowance}
 	total := decimal.Zero
 	for _, part := range parts {
 		if part.IsNegative() {

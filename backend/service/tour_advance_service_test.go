@@ -223,7 +223,7 @@ func TestTourAdvanceWorkflow(t *testing.T) {
 	if created.Status != string(models.TourStatusPendingApproval) {
 		t.Fatalf("status %s", created.Status)
 	}
-	if created.RequestedAmount != "10200.00" {
+	if created.RequestedAmount != "12000.00" {
 		t.Fatalf("requested %s", created.RequestedAmount)
 	}
 	if created.CustomerName != "TVARUR Oils And Fats Private Limited" || created.Location != "TVARUR" {
@@ -246,7 +246,7 @@ func TestTourAdvanceWorkflow(t *testing.T) {
 	if !errors.Is(err, ErrTourForbidden) {
 		t.Fatalf("admin approve: %v", err)
 	}
-	_, err = svc.Approve(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID, "10200.01", "", "")
+	_, err = svc.Approve(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID, "12000.01", "", "")
 	if err == nil {
 		t.Fatal("expected approved amount cap")
 	}
@@ -266,7 +266,7 @@ func TestTourAdvanceWorkflow(t *testing.T) {
 	if approved.NetPayable == nil || *approved.NetPayable != "10000.00" {
 		t.Fatalf("net payable %+v", approved.NetPayable)
 	}
-	if approved.RequestedAmount != "10200.00" {
+	if approved.RequestedAmount != "12000.00" {
 		t.Fatalf("requested overwritten: %s", approved.RequestedAmount)
 	}
 	if approved.ApprovedByName != "Super Admin" {
@@ -390,7 +390,7 @@ func TestTourAdvanceRejectAndTicketFilter(t *testing.T) {
 	if err := db.First(&stored, "id = ?", created.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if !stored.RequestedAmount.Equal(decimal.RequireFromString("10200")) {
+	if !stored.RequestedAmount.Equal(decimal.RequireFromString("12000")) {
 		t.Fatalf("stored total %s", stored.RequestedAmount)
 	}
 }
@@ -577,6 +577,50 @@ func TestTourAdvanceAdditional(t *testing.T) {
 	assertRule(t, err, "this tour cannot take an additional request")
 }
 
+func TestDailyAllowanceIsStoredOnceAndSurvivesRateChange(t *testing.T) {
+	db := openTourDB(t)
+	fx := seedTour(t, db)
+	svc := NewTourAdvanceService(db, nil)
+
+	input := installInput(fx.siteA.ID)
+	input.PersonsTravelling = 2
+	input.DaysPlanned = 3
+	input.Travellers = []TourTravellerInput{{Name: "One"}, {Name: "Two"}}
+	created, err := svc.Create(fx.engineer.ID, models.RoleSupport, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.DailyAllowance != "1200.00" || created.DailyAllowanceRate != "200.00" {
+		t.Fatalf("allowance rate=%s amount=%s", created.DailyAllowanceRate, created.DailyAllowance)
+	}
+	if created.RequestedAmount != "11400.00" {
+		t.Fatalf("requested %s", created.RequestedAmount)
+	}
+
+	rate := "500"
+	if _, err := svc.UpdatePolicy(fx.admin.ID, models.RoleAdmin, nil, &rate); err != nil {
+		t.Fatal(err)
+	}
+	reloaded, err := svc.Get(fx.superAdmin.ID, models.RoleSuperAdmin, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reloaded.DailyAllowance != "1200.00" || reloaded.RequestedAmount != "11400.00" {
+		t.Fatalf("old tour changed rate=%s allowance=%s requested=%s", reloaded.DailyAllowanceRate, reloaded.DailyAllowance, reloaded.RequestedAmount)
+	}
+
+	if err := svc.Delete(fx.engineer.ID, models.RoleSupport, created.ID); err != nil {
+		t.Fatal(err)
+	}
+	next, err := svc.Create(fx.engineer.ID, models.RoleSupport, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.DailyAllowance != "3000.00" || next.DailyAllowanceRate != "500.00" || next.RequestedAmount != "13200.00" {
+		t.Fatalf("new tour rate=%s allowance=%s requested=%s", next.DailyAllowanceRate, next.DailyAllowance, next.RequestedAmount)
+	}
+}
+
 const tourTestSchema = `
 CREATE TABLE users (
   id text primary key,
@@ -668,6 +712,8 @@ CREATE TABLE tour_advance_requests (
   accommodation_expense numeric,
   travel_mode text,
   travel_expense numeric,
+  daily_allowance_rate numeric default 0,
+  daily_allowance numeric default 0,
   requested_amount numeric,
   approved_amount numeric,
   credit_applied numeric default 0,
@@ -772,6 +818,7 @@ CREATE TABLE tour_advance_flags (
 CREATE TABLE tour_advance_policies (
   id text primary key,
   high_value_threshold numeric,
+  daily_allowance_rate numeric,
   updated_by text,
   updated_at datetime,
   singleton numeric unique

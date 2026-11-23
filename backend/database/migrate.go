@@ -87,6 +87,13 @@ func ensureTourAdvanceSchema(db *gorm.DB) {
 		`ALTER TABLE tour_advance_requests ADD CONSTRAINT tour_advance_approved_amount_check CHECK (
 			approved_amount IS NULL OR (approved_amount > 0 AND approved_amount <= requested_amount)
 		)`,
+		`ALTER TABLE tour_advance_requests ADD COLUMN IF NOT EXISTS daily_allowance_rate NUMERIC(12,2) NOT NULL DEFAULT 0`,
+		`ALTER TABLE tour_advance_requests ADD COLUMN IF NOT EXISTS daily_allowance NUMERIC(12,2) NOT NULL DEFAULT 0`,
+		`ALTER TABLE tour_advance_requests DROP CONSTRAINT IF EXISTS tour_advance_allowance_check`,
+		`ALTER TABLE tour_advance_requests ADD CONSTRAINT tour_advance_allowance_check CHECK (
+			daily_allowance_rate >= 0 AND daily_allowance >= 0
+		)`,
+		`ALTER TABLE tour_advance_policies ADD COLUMN IF NOT EXISTS daily_allowance_rate NUMERIC(12,2)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_tour_advance_one_open ON tour_advance_requests (engineer_id) WHERE status NOT IN ('REJECTED', 'PROCESSED')`,
 		`ALTER TABLE tour_advance_requests DROP CONSTRAINT IF EXISTS tour_advance_payment_check`,
 		`ALTER TABLE tour_advance_requests ADD CONSTRAINT tour_advance_payment_check CHECK (

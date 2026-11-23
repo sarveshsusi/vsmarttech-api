@@ -88,8 +88,12 @@ func (h *AMCAssignmentHandler) AssignAMC(c *gin.Context) {
 =========================
 */
 func (h *AMCAssignmentHandler) GetAllAMCs(c *gin.Context) {
-	amcs, err := h.service.GetAllAMCs()
+	amcs, err := h.service.GetAllAMCs(c.Query("lifecycle"))
 	if err != nil {
+		if errors.Is(err, service.ErrAMCLifecycle) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch AMCs"})
 		return
 	}
@@ -200,8 +204,12 @@ func (h *AMCAssignmentHandler) GetMyAMCs(c *gin.Context) {
 		return
 	}
 
-	amcs, err := h.service.GetEngineerAMCs(engineer.ID)
+	amcs, err := h.service.GetEngineerAMCs(engineer.ID, c.Query("lifecycle"))
 	if err != nil {
+		if errors.Is(err, service.ErrAMCLifecycle) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch AMCs"})
 		return
 	}

@@ -207,10 +207,10 @@ func TestTourAdvanceFlagRequiresJustification(t *testing.T) {
 	db := openTourDB(t)
 	fx := seedTour(t, db)
 	svc := NewTourAdvanceService(db, nil)
-	if _, err := svc.UpdatePolicy(fx.superAdmin.ID, models.RoleSuperAdmin, strPtr("100")); !errors.Is(err, ErrTourForbidden) {
+	if _, err := svc.UpdatePolicy(fx.superAdmin.ID, models.RoleSuperAdmin, strPtr("100"), nil); !errors.Is(err, ErrTourForbidden) {
 		t.Fatalf("super policy: %v", err)
 	}
-	if _, err := svc.UpdatePolicy(fx.admin.ID, models.RoleAdmin, strPtr("100")); err != nil {
+	if _, err := svc.UpdatePolicy(fx.admin.ID, models.RoleAdmin, strPtr("100"), nil); err != nil {
 		t.Fatal(err)
 	}
 	created := mustCreateTour(t, svc, fx)

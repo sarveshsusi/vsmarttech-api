@@ -34,12 +34,13 @@ type ExpenseLineInput struct {
 }
 
 type EligibilityView struct {
-	Eligible        bool   `json:"eligible"`
-	Message         string `json:"message,omitempty"`
-	RequestID       string `json:"request_id,omitempty"`
-	RequestNumber   string `json:"request_number,omitempty"`
-	Step            string `json:"step,omitempty"`
-	AvailableCredit string `json:"available_credit"`
+	Eligible           bool   `json:"eligible"`
+	Message            string `json:"message,omitempty"`
+	RequestID          string `json:"request_id,omitempty"`
+	RequestNumber      string `json:"request_number,omitempty"`
+	Step               string `json:"step,omitempty"`
+	AvailableCredit    string `json:"available_credit"`
+	DailyAllowanceRate string `json:"daily_allowance_rate"`
 }
 
 type TourFlagView struct {
@@ -129,6 +130,7 @@ type EngineerFinanceHistory struct {
 
 type TourPolicyView struct {
 	HighValueThreshold *string `json:"high_value_threshold"`
+	DailyAllowanceRate string  `json:"daily_allowance_rate"`
 }
 
 func lockEngineer(tx *gorm.DB, engineerID uuid.UUID) error {
@@ -482,7 +484,14 @@ func (s *TourAdvanceService) Eligibility(actor uuid.UUID, role models.Role) (*El
 	if err != nil {
 		return nil, err
 	}
-	view := &EligibilityView{Eligible: true, AvailableCredit: pool.StringFixed(2)}
+	rate, err := s.dailyAllowanceRate(s.db)
+	if err != nil {
+		return nil, err
+	}
+	view := &EligibilityView{
+		Eligible: true, AvailableCredit: pool.StringFixed(2),
+		DailyAllowanceRate: rate.StringFixed(2),
+	}
 	if err := s.ensureEligible(s.db, engineer.ID); err != nil {
 		blocked, ok := err.(*TourBlockedError)
 		if !ok {

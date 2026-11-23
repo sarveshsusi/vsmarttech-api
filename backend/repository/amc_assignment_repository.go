@@ -72,11 +72,12 @@ func (r *AMCAssignmentRepository) GetByID(id uuid.UUID) (*models.AMCAssignment, 
 	return &assignment, nil
 }
 
-// GetByEngineer retrieves all assignments for an engineer
+// GetByEngineer retrieves every assignment for one engineer. Lifecycle
+// filtering happens in the service so date-expired rows stay available.
 func (r *AMCAssignmentRepository) GetByEngineer(engineerID uuid.UUID) ([]models.AMCAssignment, error) {
 	var assignments []models.AMCAssignment
 	err := r.detailQuery().
-		Where("support_engineer_id = ? AND status = ?", engineerID, "active").
+		Where("support_engineer_id = ?", engineerID).
 		Order("amc_start_date ASC").
 		Find(&assignments).Error
 

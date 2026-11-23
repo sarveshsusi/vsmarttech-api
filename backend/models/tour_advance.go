@@ -90,6 +90,8 @@ type TourAdvanceRequest struct {
 	AccommodationExpense decimal.Decimal `gorm:"type:numeric(12,2);not null" json:"accommodation_expense"`
 	TravelMode           TourTravelMode  `gorm:"type:varchar(10);not null" json:"travel_mode"`
 	TravelExpense        decimal.Decimal `gorm:"type:numeric(12,2);not null" json:"travel_expense"`
+	DailyAllowanceRate   decimal.Decimal `gorm:"type:numeric(12,2);not null;default:0" json:"daily_allowance_rate"`
+	DailyAllowance       decimal.Decimal `gorm:"type:numeric(12,2);not null;default:0" json:"daily_allowance"`
 
 	RequestedAmount       decimal.Decimal  `gorm:"type:numeric(12,2);not null" json:"requested_amount"`
 	ApprovedAmount        *decimal.Decimal `gorm:"type:numeric(12,2)" json:"approved_amount,omitempty"`
@@ -280,6 +282,7 @@ func (TourAdvanceFlag) TableName() string {
 type TourAdvancePolicy struct {
 	ID                 uuid.UUID        `gorm:"type:uuid;primaryKey" json:"id"`
 	HighValueThreshold *decimal.Decimal `gorm:"type:numeric(12,2)" json:"high_value_threshold,omitempty"`
+	DailyAllowanceRate *decimal.Decimal `gorm:"type:numeric(12,2)" json:"daily_allowance_rate,omitempty"`
 	UpdatedBy          *uuid.UUID       `gorm:"type:uuid" json:"updated_by,omitempty"`
 	UpdatedAt          time.Time        `json:"updated_at"`
 	Singleton          bool             `gorm:"not null;uniqueIndex" json:"-"`

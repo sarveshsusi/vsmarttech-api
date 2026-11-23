@@ -54,6 +54,35 @@ func TestRequestedAmountIgnoresNothingAndSums(t *testing.T) {
 	}
 }
 
+func TestDailyAllowanceTwoPersonsThreeDays(t *testing.T) {
+	allowance, err := DailyAllowance(DefaultDailyAllowanceRate, 2, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !allowance.Equal(decimal.RequireFromString("1200")) {
+		t.Fatalf("allowance = %s", allowance)
+	}
+	total, err := RequestedAmount(TourExpenseInput{
+		Food:           decimal.RequireFromString("100"),
+		Local:          decimal.Zero,
+		Accommodation:  decimal.Zero,
+		Travel:         decimal.Zero,
+		DailyAllowance: allowance,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !total.Equal(decimal.RequireFromString("1300")) {
+		t.Fatalf("total = %s, allowance was added more than once", total)
+	}
+	if _, err := DailyAllowance(DefaultDailyAllowanceRate, 0, 3); err == nil {
+		t.Fatal("expected persons rejection")
+	}
+	if _, err := DailyAllowance(DefaultDailyAllowanceRate, 2, 0); err == nil {
+		t.Fatal("expected days rejection")
+	}
+}
+
 func TestRequestedAmountRejectsNegative(t *testing.T) {
 	_, err := RequestedAmount(TourExpenseInput{
 		Food:          decimal.RequireFromString("-1"),

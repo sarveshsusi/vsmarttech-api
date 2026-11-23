@@ -130,12 +130,20 @@ func (s *AMCAssignmentService) GetAMCAssignment(id uuid.UUID) (*models.AMCAssign
 	return s.repo.GetByID(id)
 }
 
-func (s *AMCAssignmentService) GetEngineerAMCs(engineerID uuid.UUID) ([]models.AMCAssignment, error) {
-	return s.repo.GetByEngineer(engineerID)
+func (s *AMCAssignmentService) GetEngineerAMCs(engineerID uuid.UUID, lifecycle string) ([]models.AMCAssignment, error) {
+	rows, err := s.repo.GetByEngineer(engineerID)
+	if err != nil {
+		return nil, err
+	}
+	return FilterSupportAMCLifecycle(rows, lifecycle, time.Now())
 }
 
-func (s *AMCAssignmentService) GetAllAMCs() ([]models.AMCAssignment, error) {
-	return s.repo.GetAll()
+func (s *AMCAssignmentService) GetAllAMCs(lifecycle string) ([]models.AMCAssignment, error) {
+	rows, err := s.repo.GetAll()
+	if err != nil {
+		return nil, err
+	}
+	return FilterAdminAMCLifecycle(rows, lifecycle, time.Now())
 }
 
 func (s *AMCAssignmentService) GetCustomerAMCs(customerID uuid.UUID) ([]models.AMCAssignment, error) {

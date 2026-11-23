@@ -78,6 +78,7 @@ type reviewExpenseBody struct {
 
 type policyBody struct {
 	HighValueThreshold *string `json:"high_value_threshold"`
+	DailyAllowanceRate *string `json:"daily_allowance_rate"`
 }
 
 type rejectTourAdvanceBody struct {
@@ -462,7 +463,7 @@ func (h *TourAdvanceHandler) UpdatePolicy(c *gin.Context) {
 		return
 	}
 	actor, role := tourActor(c)
-	view, err := h.service.UpdatePolicy(actor, role, body.HighValueThreshold)
+	view, err := h.service.UpdatePolicy(actor, role, body.HighValueThreshold, body.DailyAllowanceRate)
 	if err != nil {
 		writeTourError(c, err)
 		return

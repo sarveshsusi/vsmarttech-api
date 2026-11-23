@@ -77,6 +77,8 @@ type TourAdvanceView struct {
 	AccommodationExpense string                 `json:"accommodation_expense"`
 	TravelMode           string                 `json:"travel_mode"`
 	TravelExpense        string                 `json:"travel_expense"`
+	DailyAllowanceRate   string                 `json:"daily_allowance_rate"`
+	DailyAllowance       string                 `json:"daily_allowance"`
 	RequestedAmount      string                 `json:"requested_amount"`
 	ApprovedAmount       *string                `json:"approved_amount"`
 	PaymentMode          string                 `json:"payment_mode,omitempty"`
@@ -217,8 +219,17 @@ func (s *TourAdvanceService) Create(actor uuid.UUID, role models.Role, in Create
 	if err != nil {
 		return nil, err
 	}
+	rate, err := s.dailyAllowanceRate(s.db)
+	if err != nil {
+		return nil, err
+	}
+	allowance, err := domain.DailyAllowance(rate, in.PersonsTravelling, in.DaysPlanned)
+	if err != nil {
+		return nil, err
+	}
 	expenses := domain.TourExpenseInput{
 		Food: food, Local: local, Accommodation: accommodation, Travel: travel,
+		DailyAllowance: allowance,
 	}
 	rules := domain.TourCreateRules{
 		WorkType:   models.TourWorkType(strings.ToUpper(strings.TrimSpace(in.WorkType))),
@@ -273,6 +284,8 @@ func (s *TourAdvanceService) Create(actor uuid.UUID, role models.Role, in Create
 		AccommodationExpense: accommodation,
 		TravelMode:           rules.TravelMode,
 		TravelExpense:        travel,
+		DailyAllowanceRate:   rate,
+		DailyAllowance:       allowance,
 		RequestedAmount:      requested,
 		Status:               models.TourStatusPendingApproval,
 		CreatedAt:            time.Now(),
@@ -921,6 +934,8 @@ func toTourView(row *models.TourAdvanceRequest) TourAdvanceView {
 		AccommodationExpense: row.AccommodationExpense.StringFixed(2),
 		TravelMode:           string(row.TravelMode),
 		TravelExpense:        row.TravelExpense.StringFixed(2),
+		DailyAllowanceRate:   row.DailyAllowanceRate.StringFixed(2),
+		DailyAllowance:       row.DailyAllowance.StringFixed(2),
 		RequestedAmount:      row.RequestedAmount.StringFixed(2),
 		Status:               string(row.Status),
 		ApprovalRemarks:      row.ApprovalRemarks,

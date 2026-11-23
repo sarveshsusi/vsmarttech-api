@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"strings"
 	"time"
 
@@ -304,13 +305,28 @@ func (s *TourAdvanceService) OwnHistory(actor uuid.UUID, role models.Role) (*Eng
 	return s.EngineerHistory(actor, role, engineer.ID)
 }
 
+func (s *TourAdvanceService) dailyAllowanceRate(db *gorm.DB) (decimal.Decimal, error) {
+	var policy models.TourAdvancePolicy
+	err := db.First(&policy).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return domain.DefaultDailyAllowanceRate, nil
+	}
+	if err != nil {
+		return decimal.Zero, err
+	}
+	if policy.DailyAllowanceRate == nil || !policy.DailyAllowanceRate.GreaterThan(decimal.Zero) {
+		return domain.DefaultDailyAllowanceRate, nil
+	}
+	return *policy.DailyAllowanceRate, nil
+}
+
 func (s *TourAdvanceService) GetPolicy(actor uuid.UUID, role models.Role) (*TourPolicyView, error) {
 	if role != models.RoleAdmin {
 		return nil, ErrTourForbidden
 	}
 	var policy models.TourAdvancePolicy
 	err := s.db.First(&policy).Error
-	view := &TourPolicyView{}
+	view := &TourPolicyView{DailyAllowanceRate: domain.DefaultDailyAllowanceRate.StringFixed(2)}
 	if err == gorm.ErrRecordNotFound {
 		return view, nil
 	}
@@ -321,10 +337,13 @@ func (s *TourAdvanceService) GetPolicy(actor uuid.UUID, role models.Role) (*Tour
 		formatted := policy.HighValueThreshold.StringFixed(2)
 		view.HighValueThreshold = &formatted
 	}
+	if policy.DailyAllowanceRate != nil && policy.DailyAllowanceRate.GreaterThan(decimal.Zero) {
+		view.DailyAllowanceRate = policy.DailyAllowanceRate.StringFixed(2)
+	}
 	return view, nil
 }
 
-func (s *TourAdvanceService) UpdatePolicy(actor uuid.UUID, role models.Role, raw *string) (*TourPolicyView, error) {
+func (s *TourAdvanceService) UpdatePolicy(actor uuid.UUID, role models.Role, raw, allowanceRaw *string) (*TourPolicyView, error) {
 	if role != models.RoleAdmin {
 		return nil, ErrTourForbidden
 	}
@@ -339,21 +358,41 @@ func (s *TourAdvanceService) UpdatePolicy(actor uuid.UUID, role models.Role, raw
 		}
 		threshold = &amount
 	}
+	var allowanceRate *decimal.Decimal
+	updateAllowance := allowanceRaw != nil
+	if updateAllowance && strings.TrimSpace(*allowanceRaw) != "" {
+		amount, err := domain.ParseMoney(*allowanceRaw)
+		if err != nil {
+			return nil, err
+		}
+		if !amount.GreaterThan(decimal.Zero) {
+			return nil, &domain.RuleError{Msg: "daily allowance rate must be greater than 0"}
+		}
+		allowanceRate = &amount
+	}
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		var policy models.TourAdvancePolicy
 		err := tx.First(&policy).Error
 		now := time.Now()
 		if err == gorm.ErrRecordNotFound {
-			return tx.Create(&models.TourAdvancePolicy{
+			row := models.TourAdvancePolicy{
 				ID: uuid.New(), HighValueThreshold: threshold, UpdatedBy: &actor, UpdatedAt: now, Singleton: true,
-			}).Error
+			}
+			if updateAllowance {
+				row.DailyAllowanceRate = allowanceRate
+			}
+			return tx.Create(&row).Error
 		}
 		if err != nil {
 			return err
 		}
-		return tx.Model(&policy).Updates(map[string]interface{}{
+		updates := map[string]interface{}{
 			"high_value_threshold": threshold, "updated_by": actor, "updated_at": now,
-		}).Error
+		}
+		if updateAllowance {
+			updates["daily_allowance_rate"] = allowanceRate
+		}
+		return tx.Model(&policy).Updates(updates).Error
 	})
 	if err != nil {
 		return nil, err
