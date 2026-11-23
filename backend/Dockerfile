@@ -1,10 +1,10 @@
 # ================================
 # Stage 1: Build
 # ================================
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26-alpine AS builder
 
 # Pull patched toolchain matching go.mod (fixes stdlib vulns flagged by govulncheck)
-ENV GOTOOLCHAIN=go1.25.13
+ENV GOTOOLCHAIN=go1.26.11
 
 RUN apk add --no-cache git ca-certificates
 
