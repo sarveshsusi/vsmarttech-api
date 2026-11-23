@@ -140,30 +140,38 @@ func (h *AuthHandler) cookieSecure() bool {
 	return h.cfg.Server.Env == "production"
 }
 
+func (h *AuthHandler) writeRefreshCookie(c *gin.Context, value string, maxAge int, partitioned bool) {
+	sameSite := h.cookieSameSite()
+	secure := h.cookieSecure() || partitioned
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:        "refresh_token",
+		Value:       value,
+		Path:        "/",
+		MaxAge:      maxAge,
+		Secure:      secure,
+		HttpOnly:    true,
+		SameSite:    sameSite,
+		Partitioned: partitioned,
+	})
+}
+
 func (h *AuthHandler) setRefreshCookie(c *gin.Context, token string) {
-	c.SetSameSite(h.cookieSameSite())
-	c.SetCookie(
-		"refresh_token",
-		token,
-		int(h.cfg.JWT.RefreshExpiry.Seconds()),
-		"/",
-		"",
-		h.cookieSecure(),
-		true, // HttpOnly
-	)
+	maxAge := int(h.cfg.JWT.RefreshExpiry.Seconds())
+	// Cross-site API (SameSite=None) must use a partitioned cookie. Browsers
+	// drop an unpartitioned third-party cookie, so a reopened PWA cannot refresh.
+	if h.cookieSameSite() == http.SameSiteNoneMode {
+		h.writeRefreshCookie(c, "", -1, false)
+		h.writeRefreshCookie(c, token, maxAge, true)
+		return
+	}
+	h.writeRefreshCookie(c, token, maxAge, false)
 }
 
 func (h *AuthHandler) clearRefreshCookie(c *gin.Context) {
-	c.SetSameSite(h.cookieSameSite())
-	c.SetCookie(
-		"refresh_token",
-		"",
-		-1,
-		"/",
-		"",
-		h.cookieSecure(),
-		true,
-	)
+	h.writeRefreshCookie(c, "", -1, false)
+	if h.cookieSameSite() == http.SameSiteNoneMode {
+		h.writeRefreshCookie(c, "", -1, true)
+	}
 }
 
 /* =====================
